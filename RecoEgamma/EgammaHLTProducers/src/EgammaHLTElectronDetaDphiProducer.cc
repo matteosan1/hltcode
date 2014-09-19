@@ -8,22 +8,14 @@
 
 #include "RecoEgamma/EgammaHLTProducers/interface/EgammaHLTElectronDetaDphiProducer.h"
 
-// Framework
-#include "FWCore/Framework/interface/Event.h"
-#include "FWCore/Framework/interface/EventSetup.h"
-#include "DataFormats/Common/interface/Handle.h"
-#include "FWCore/Framework/interface/ESHandle.h"
-#include "FWCore/MessageLogger/interface/MessageLogger.h"
-#include "FWCore/Utilities/interface/Exception.h"
+//#include "FWCore/Framework/interface/ESHandle.h"
+//#include "FWCore/MessageLogger/interface/MessageLogger.h"
+//#include "FWCore/Utilities/interface/Exception.h"
 
 #include "DataFormats/EgammaCandidates/interface/Electron.h"
 #include "DataFormats/RecoCandidate/interface/RecoEcalCandidate.h"
 #include "DataFormats/EgammaCandidates/interface/ElectronIsolationAssociation.h"
 #include "DataFormats/RecoCandidate/interface/RecoEcalCandidateIsolation.h"
-
-#include "DataFormats/Common/interface/RefToBase.h"
-
-#include "DataFormats/Common/interface/RefProd.h"
 
 #include "DataFormats/TrackReco/interface/TrackFwd.h"
 #include "DataFormats/TrackReco/interface/Track.h"
@@ -31,30 +23,24 @@
 #include "TrackingTools/TransientTrack/interface/TransientTrack.h"
 #include "RecoEgamma/EgammaElectronAlgos/interface/ElectronUtilities.h"
 
-#include "DataFormats/TrackReco/interface/Track.h"
 #include "DataFormats/EgammaReco/interface/SuperCluster.h"
 
-//#include "CondFormats/DataRecord/interface/BeamSpotObjectsRcd.h"//needed?
-//#include "CondFormats/BeamSpotObjects/interface/BeamSpotObjects.h"//needed?
-
-
 #include "DataFormats/Math/interface/Point3D.h"
-
 #include "RecoEgamma/EgammaTools/interface/ECALPositionCalculator.h"
-
-#include "FWCore/Framework/interface/EventSetup.h"
 #include "MagneticField/Records/interface/IdealMagneticFieldRecord.h"
 #include "MagneticField/Engine/interface/MagneticField.h"
+#include "FWCore/ParameterSet/interface/ConfigurationDescriptions.h"
+#include "FWCore/ParameterSet/interface/ParameterSetDescription.h"
 
-EgammaHLTElectronDetaDphiProducer::EgammaHLTElectronDetaDphiProducer(const edm::ParameterSet& config) 
-{
+EgammaHLTElectronDetaDphiProducer::EgammaHLTElectronDetaDphiProducer(const edm::ParameterSet& config) {
 
-  electronProducer_             = config.getParameter<edm::InputTag>("electronProducer");
-  bsProducer_                   = config.getParameter<edm::InputTag>("BSProducer");
-  useTrackProjectionToEcal_     = config.getParameter<bool>("useTrackProjectionToEcal");
-  variablesAtVtx_               = config.getParameter<bool>("variablesAtVtx");
-  recoEcalCandidateProducer_ = config.getParameter<edm::InputTag>("recoEcalCandidateProducer"); 
-  useSCRefs_ = config.getParameter<bool>("useSCRefs");
+  electronProducer_          = consumes<reco::ElectronCollection>(config.getParameter<edm::InputTag>("electronProducer"));
+  bsProducer_                = consumes<reco::BeamSpot>(config.getParameter<edm::InputTag>("BSProducer"));
+  recoEcalCandidateProducer_ = consumes<reco::RecoEcalCandidateCollection>(config.getParameter<edm::InputTag>("recoEcalCandidateProducer")); 
+
+  useSCRefs_                 = config.getParameter<bool>("useSCRefs");
+  useTrackProjectionToEcal_  = config.getParameter<bool>("useTrackProjectionToEcal");
+  variablesAtVtx_            = config.getParameter<bool>("variablesAtVtx");
 
   //register your products
   if(!useSCRefs_){
@@ -66,22 +52,27 @@ EgammaHLTElectronDetaDphiProducer::EgammaHLTElectronDetaDphiProducer(const edm::
   }
 }
 
-EgammaHLTElectronDetaDphiProducer::~EgammaHLTElectronDetaDphiProducer(){}
+EgammaHLTElectronDetaDphiProducer::~EgammaHLTElectronDetaDphiProducer()
+{}
 
-
-//
-// member functions
-//
-
-// ------------ method called to produce the data  ------------
+void EgammaHLTElectronDetaDphiProducer::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
+  edm::ParameterSetDescription desc;
+  desc.add<edm::InputTag>(("electronProducer"), edm::InputTag("hltEleAnyWP80PixelMatchElectronsL1Seeded"));
+  desc.add<edm::InputTag>(("BSProducer"), edm::InputTag("hltOnlineBeamSpot"));
+  desc.add<edm::InputTag>(("recoEcalCandidateProducer"), edm::InputTag()); 
+  desc.add<bool>(("useSCRefs"), false);
+  desc.add<bool>(("useTrackProjectionToEcal"), false);
+  desc.add<bool>(("variablesAtVtx"), true);
+  descriptions.add(("hltEgammaHLTElectronDetaDphiProducer"), desc);  
+}
+  
 void EgammaHLTElectronDetaDphiProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup) {
-
   // Get the HLT filtered objects
   edm::Handle<reco::ElectronCollection> electronHandle;
-  iEvent.getByLabel(electronProducer_,electronHandle);
-
+  iEvent.getByToken(electronProducer_,electronHandle);
+  
   edm::Handle<reco::BeamSpot> recoBeamSpotHandle;
-  iEvent.getByLabel(bsProducer_,recoBeamSpotHandle);
+  iEvent.getByToken(bsProducer_,recoBeamSpotHandle);
   // gets its position
   const reco::BeamSpot::Point& bsPosition = recoBeamSpotHandle->position(); 
 
@@ -94,17 +85,18 @@ void EgammaHLTElectronDetaDphiProducer::produce(edm::Event& iEvent, const edm::E
   reco::RecoEcalCandidateIsolationMap dphiCandMap;
   
   if(!useSCRefs_){
+
     for(reco::ElectronCollection::const_iterator iElectron = electronHandle->begin(); iElectron != electronHandle->end(); iElectron++){
   
       reco::ElectronRef eleref(reco::ElectronRef(electronHandle,iElectron - electronHandle->begin()));
-      std::pair<float,float> dEtaDPhi = calDEtaDPhiSCTrk(eleref, bsPosition, theMagField.product());
+      std::pair<float,float> dEtaDPhi = calDEtaDPhiSCTrk(eleref,bsPosition,theMagField.product());
       
       detaMap.insert(eleref, dEtaDPhi.first);
       dphiMap.insert(eleref, dEtaDPhi.second);
     }
   }else { //we loop over reco ecal candidates
      edm::Handle<reco::RecoEcalCandidateCollection> recoEcalCandHandle;
-     iEvent.getByLabel(recoEcalCandidateProducer_,recoEcalCandHandle);
+     iEvent.getByToken(recoEcalCandidateProducer_,recoEcalCandHandle);
      for(reco::RecoEcalCandidateCollection::const_iterator iRecoEcalCand = recoEcalCandHandle->begin(); iRecoEcalCand != recoEcalCandHandle->end(); iRecoEcalCand++){
     
        reco::RecoEcalCandidateRef recoEcalCandRef(recoEcalCandHandle,iRecoEcalCand-recoEcalCandHandle->begin());
@@ -191,7 +183,7 @@ reco::ElectronRef EgammaHLTElectronDetaDphiProducer::getEleRef(const reco::RecoE
 }
   
 
-void EgammaHLTElectronDetaDphiProducer::beginRun(edm::Run&, edm::EventSetup const& iSetup) {
+void EgammaHLTElectronDetaDphiProducer::beginRun(edm::Run const&, edm::EventSetup const& iSetup) {
   using namespace edm;
 
   ESHandle<MagneticField> magneticField;
@@ -199,8 +191,6 @@ void EgammaHLTElectronDetaDphiProducer::beginRun(edm::Run&, edm::EventSetup cons
   magField_ = magneticField.product();
 
 }
-
-void EgammaHLTElectronDetaDphiProducer::endRun(edm::Run&, edm::EventSetup const&){}
 
 //define this as a plug-in
 //DEFINE_FWK_MODULE(EgammaHLTTrackIsolationProducers);
