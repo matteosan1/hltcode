@@ -21,6 +21,7 @@
 
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 
+#include "HLTrigger/HLTcore/interface/HLTConfigProvider.h"
 #include "DataFormats/HLTReco/interface/TriggerEvent.h"
 #include "DataFormats/HLTReco/interface/TriggerObject.h"
 #include "DataFormats/Common/interface/TriggerResults.h"
@@ -54,6 +55,9 @@
 #include "DataFormats/GsfTrackReco/interface/GsfTrack.h"
 #include "DataFormats/TrackReco/interface/HitPattern.h"
 
+#include "HLTrigger/HLTcore/interface/HLTFilter.h"
+#include "HLTrigger/HLTcore/interface/HLTConfigProvider.h"
+#include "FWCore/Common/interface/TriggerNames.h"
 #include "DataFormats/HLTReco/interface/TriggerTypeDefs.h"
 #include "DataFormats/HLTReco/interface/TriggerEventWithRefs.h"
 #include "DataFormats/RecoCandidate/interface/RecoEcalCandidate.h"
@@ -80,37 +84,45 @@ public:
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
   int findEleRef(reco::RecoEcalCandidateRef ref, edm::Handle<reco::ElectronCollection> hltEleH);
   void mcTruth(edm::Handle<reco::GenParticleCollection> genParticleH);
-  void storeOffline(edm::Handle<reco::GsfElectronCollection> gsfH);
 
 private:
+  virtual void beginRun(const edm::Run& run,const edm::EventSetup& setup);
   virtual void beginJob() ;
   virtual void analyze(const edm::Event&, const edm::EventSetup&);
   virtual void endJob() ;
+
+  edm::InputTag trigResultsTag_;
+  HLTConfigProvider hltConfig_; 
+  std::vector<std::string> pathNames_;
 
   std::string outputFileName;
   TFile* f;
   TTree* t;
   
-  Int_t n, npf, gp_n, el_n;
-  Float_t el_eta[10], el_phi[10], el_e[10];
-  Float_t el_hcal[10], el_ecal[10];
-  Float_t el_hoe[10], el_tkiso[10];
-  Float_t el_dphi[10], el_deta[10], el_sieie[10];
-
+  Float_t rho;
+  Int_t passSel;
+  Int_t n, npf, gp_n, reco_n, nuns;
   Float_t etawidth[10], phiwidth[10];
   Float_t etawidthpf[10], phiwidthpf[10];
   Float_t eraw[10];
   Float_t e[10];
+  Float_t et[10];
   Float_t se[10];
   Float_t erawpf[10];
   Float_t epf[10];  
+  Float_t eoppf[10];  
+  Float_t etpf[10];  
   Float_t sepf[10];  
   Float_t eta[10];
   Float_t etapf[10];  
+  Float_t euns[20];
+  Float_t etuns[20];
+  Float_t etauns[20];  
   Float_t seta[10];
   Float_t setapf[10];  
   Float_t phi[10];
   Float_t phipf[10];  
+  Float_t phiuns[20];  
   Float_t sphi[10];
   Float_t sphipf[10];  
   Float_t ecal[10];
@@ -138,25 +150,45 @@ private:
   Float_t chiso[10];
   Float_t phiso[10];
   Float_t neiso[10];
+  Float_t chi2pf[10];
+  Int_t mishitspf[10];
+  Int_t hitspf[10];
 
   Float_t gp_pt[10];
   Float_t gp_eta[10];
   Float_t gp_phi[10];
 
+  Float_t reco_et[10];
+  Float_t reco_pt[10];
+  Float_t reco_eta[10];
+  Float_t reco_phi[10];
+
   Int_t nvtx;
 
   bool isData;
+  bool saveReco;
+  bool saveUnseeded;
   bool newClustering;
   bool oldClustering;
-  bool offline;
 };
 
+void plotDistr::beginRun(const edm::Run& run,const edm::EventSetup& setup) {
+  std::cout <<"begining run "<<std::endl;
+  bool changed = false;
+  hltConfig_.init(run,setup,trigResultsTag_.process(),changed); //as we need the orginal HLT config...
+  std::cout <<"table name "<<hltConfig_.tableName()<<std::endl;
+}
+
+
 plotDistr::plotDistr(const edm::ParameterSet& iConfig) {
-  outputFileName = iConfig.getParameter<std::string>("OutputFileName");
-  isData         = iConfig.getParameter<bool>("isData");
-  newClustering  = iConfig.getParameter<bool>("activateNewClustering");
-  oldClustering  = iConfig.getParameter<bool>("activateOldClustering");
-  offline        = iConfig.getParameter<bool>("activateOffline");
+  outputFileName  = iConfig.getParameter<std::string>("OutputFileName");
+  isData          = iConfig.getParameter<bool>("isData");
+  newClustering   = iConfig.getParameter<bool>("activateNewClustering");
+  oldClustering   = iConfig.getParameter<bool>("activateOldClustering");
+  saveReco        = iConfig.getParameter<bool>("saveReco");
+  saveUnseeded    = iConfig.getParameter<bool>("saveUnseeded");
+  pathNames_      = iConfig.getParameter<std::vector<std::string>>("trgSelection");
+  trigResultsTag_ = iConfig.getParameter<edm::InputTag>("trgResults");
 }
 
 plotDistr::~plotDistr() 
@@ -172,30 +204,6 @@ int plotDistr::findEleRef(reco::RecoEcalCandidateRef ref, edm::Handle<reco::Elec
   }
 
   return index;
-}
-
-void plotDistr::storeOffline(edm::Handle<reco::GsfElectronCollection> gsfH) {
-  
-  el_n = 0;
-  for (size_t i=0; i<gsfH->size(); ++i) {
-    const reco::GsfElectronRef e(gsfH, i);
-
-    if (i>9)
-      continue;
-
-    el_e[i]    = e->superCluster()->energy();
-    el_eta[i]   = e->superCluster()->eta();
-    el_phi[i]   = e->superCluster()->phi();
-    el_sieie[i] = e->sigmaIetaIeta();
-    el_ecal[i]  = e->dr03EcalRecHitSumEt();
-    el_hcal[i]  = e->dr03HcalTowerSumEt();
-    el_hoe[i]   = e->hcalOverEcal()*el_e[i];
-    el_tkiso[i] = e->dr03TkSumPt();
-    el_deta[i]  = e->deltaEtaSuperClusterTrackAtVtx();
-    el_dphi[i]  = e->deltaPhiSuperClusterTrackAtVtx();
-
-    el_n++;
-  }
 }
 
 void plotDistr::mcTruth(edm::Handle<reco::GenParticleCollection> gpH) {
@@ -218,17 +226,23 @@ void plotDistr::mcTruth(edm::Handle<reco::GenParticleCollection> gpH) {
 }
 
 void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) {
+  edm::Handle<edm::TriggerResults> trigResultsHandle;
+  event.getByLabel(trigResultsTag_,trigResultsHandle);
+
+  const edm::TriggerResults& trigResults = *trigResultsHandle;
+  const edm::TriggerNames& trigNames = event.triggerNames(trigResults);  
+
+  passSel = 0; 
+  for(size_t pathNr=0;pathNr<pathNames_.size();pathNr++){
+    size_t pathIndex = trigNames.triggerIndex(pathNames_[pathNr]);
+    if(pathIndex<trigResults.size() &&  trigResults.accept(pathIndex)) 
+      passSel = 1;
+  }
 
   edm::Handle<reco::GenParticleCollection> gpH;
   if (!isData) {
     event.getByLabel("genParticles", gpH);
     mcTruth(gpH);
-  }
-  
-  edm::Handle<reco::GsfElectronCollection> gsfH;
-  if (offline) {
-    event.getByLabel("gsfElectrons", gsfH);
-    storeOffline(gsfH);
   }
 
   edm::Handle<std::vector<reco::Electron> > eH;
@@ -237,295 +251,347 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
   edm::Handle<reco::RecoEcalCandidateIsolationMap> ecalMapH;
   edm::Handle<reco::RecoEcalCandidateIsolationMap> hcalMapH;
   edm::Handle<reco::RecoEcalCandidateIsolationMap> hoeMapH;
-  edm::Handle<reco::ElectronIsolationMap> tkisoMapH;
-  edm::Handle<reco::ElectronIsolationMap> detaMapH;
-  edm::Handle<reco::ElectronIsolationMap> dphiMapH;
+  edm::Handle<reco::RecoEcalCandidateIsolationMap> tkisoMapH;
+  edm::Handle<reco::RecoEcalCandidateIsolationMap> detaMapH;
+  edm::Handle<reco::RecoEcalCandidateIsolationMap> dphiMapH;
+  edm::Handle<reco::RecoEcalCandidateIsolationMap> eopMapH;
+  edm::Handle<reco::RecoEcalCandidateIsolationMap> mishitsMapH;
+  edm::Handle<reco::RecoEcalCandidateIsolationMap> chi2MapH;
+  edm::Handle<reco::RecoEcalCandidateIsolationMap> hitsMapH;
   edm::Handle<reco::VertexCollection> vtxH;
-  //event.getByLabel(edm::InputTag("hltPixelVertices"), vtxH);
-  //nvtx = vtxH->size();
 
-  if (oldClustering) {
-    event.getByLabel( edm::InputTag("hltEle27WP80PixelMatchElectronsL1Seeded"), eH);  
-    event.getByLabel( edm::InputTag("hltL1SeededRecoEcalCandidate"), cH);
-    
-    const reco::RecoEcalCandidateIsolationMap* sieieMap = 0;
-    event.getByLabel(edm::InputTag("hltL1SeededHLTClusterShape"), sieieMapH);
-    if (!sieieMapH.failedToGet())
-      sieieMap = sieieMapH.product();
-    
-    const reco::RecoEcalCandidateIsolationMap* ecalMap = 0;
-    event.getByLabel(edm::InputTag("hltL1SeededPhotonEcalIso"), ecalMapH);
-    if (!ecalMapH.failedToGet()) 
-      ecalMap = ecalMapH.product(); 
+  if (saveUnseeded) {
+    event.getByLabel(edm::InputTag("hltEgammaCandidatesUnseeded"), cH);
 
-    const reco::RecoEcalCandidateIsolationMap* hcalMap = 0;
-    event.getByLabel(edm::InputTag("hltL1SeededPhotonHcalIso"), hcalMapH);
-    if (!hcalMapH.failedToGet()) 
-      hcalMap = hcalMapH.product(); 
+    nuns = 0;
+    if (!cH.failedToGet()) {
 
-    const reco::RecoEcalCandidateIsolationMap* hoeMap = 0;
-    event.getByLabel(edm::InputTag("hltL1SeededPhotonHcalForHE"), hoeMapH);
-    if (!hoeMapH.failedToGet()) 
-      hoeMap = hoeMapH.product(); 
-
-    const reco::ElectronIsolationMap* tkisoMap = 0;
-    event.getByLabel(edm::InputTag("hltEle27WP80L1SeededElectronTrackIso"), tkisoMapH);
-    if (!tkisoMapH.failedToGet())
-      tkisoMap = tkisoMapH.product();          
-
-    const reco::ElectronIsolationMap* detaMap = 0;
-    event.getByLabel(edm::InputTag("hltEle27WP80L1SeededDetaDphi:Deta"), detaMapH);
-    if (!detaMapH.failedToGet())
-      detaMap = detaMapH.product();          
-
-    const reco::ElectronIsolationMap* dphiMap = 0;
-    event.getByLabel(edm::InputTag("hltEle27WP80L1SeededDetaDphi:Dphi"), dphiMapH);
-    if (!dphiMapH.failedToGet())
-      dphiMap = dphiMapH.product();
-        
-    n = 0;
-    for (unsigned int i=0; i<cH->size(); i++) {
-      if (n == 9)
-	continue;
-      
-      etawidth[n] = 9999.;
-      phiwidth[n] = 9999.;
-      e[n] = 9999.;
-      se[n] = 9999.;
-      eraw[n] = 9999.;
-      eta[n] = 9999.;
-      phi[n] = 9999.;
-      seta[n] = 9999.;
-      sphi[n] = 9999.;
-      sieie[n] = 9999.;
-      ecal[n] = 9999;
-      deta[n] = 9999.;
-      dphi[n] = 9999.;
-      tkpt[n] = 9999.;
-      tketa[n] = 9999.;
-      tkphi[n] = 9999.;
-      hcal[n] = 9999.;
-      hoe[n] = 9999.;
-      tkiso[n] = 9999.;
-      
-      reco::RecoEcalCandidateRef c(cH, i);
-      //std::cout << c->eta() << " " <<  c->phi() << " " << c->et() << std::endl;
-      //if (c->energy()*sin(c->theta()) < 20.)
-      //  continue;
-      //eraw[n] = c->superCluster()->rawEnergy();
-      e[n] = c->energy();//*sin(c->theta());
-      //se[n] = c->superCluster()->seed()->energy();//*sin(c->theta());
-      eta[n] = c->eta();
-      phi[n] = c->phi();
-      //seta[n] = c->superCluster()->seed()->eta();
-      //sphi[n] = c->superCluster()->seed()->phi();
-      etawidth[n] = c->superCluster()->etaWidth();
-      phiwidth[n] = c->superCluster()->phiWidth();
-
-      if (sieieMap != 0)
-	sieie[n] = (*sieieMap)[c];
-
-      if (ecalMap != 0) 
-	ecal[n] = (*ecalMap)[c]; 
-      
-      if (hoeMap != 0) {
-	hoe[n] = (*hoeMap)[c]; 
-      }
-      
-      if (hcalMap != 0) 
-	hcal[n] = (*hcalMap)[c]; 
-      
-      if (!eH.failedToGet()) {
-	int index  = findEleRef(c, eH);
-	if (index != -1) {
-	  reco::ElectronRef e(eH, index);
-	  
-	  tkpt[n] = e->track()->pt();
-	  tketa[n] = e->track()->eta();	
-	  tkphi[n] = e->track()->phi();
-	  
-	  if (detaMap != 0) {
-	    deta[n] = ((*detaMap)[e]);
-	  }
-	  
-	  if (dphiMap != 0)
-	    dphi[n] = fabs((*dphiMap)[e]);
-
-	  if (tkisoMap != 0)
-	    tkiso[n] = ((*tkisoMap)[e]);
-	}
-      }
-      n++;
+      for (unsigned int i=0; i<cH->size(); i++) {
+	if (nuns == 20)
+	  continue;
+	euns[nuns] = 9999.;
+	etuns[nuns] = 9999.;   
+	etauns[nuns] = 9999.;
+	phiuns[nuns] = 9999.;
+	
+	reco::RecoEcalCandidateRef c(cH, i);
+	euns[nuns] = c->energy();
+	etuns[nuns] = c->energy()*sin(c->theta());
+	etauns[nuns] = c->eta();
+	phiuns[nuns] = c->phi();
+	nuns++;
+      }      
     }
   }
 
+  if (saveReco) {
+    edm::Handle<std::vector<reco::GsfElectron> > elH;
+    event.getByLabel("gsfElectrons", elH);
+    reco_n = 0;
+    for (unsigned int i=0; i<elH->size(); i++) {
+      if (reco_n == 9)
+	continue;
+      reco_et[reco_n] = 9999.;
+      reco_eta[reco_n] = 9999.;
+      reco_phi[reco_n] = 9999.;
+      reco_pt[reco_n] = 9999.;
+      
+      reco::GsfElectronRef el(elH, i);
+      reco_et[reco_n] = el->superCluster()->energy()*sin(el->superCluster()->position().theta());
+      reco_pt[reco_n] = el->pt();
+      reco_eta[reco_n] = el->superCluster()->eta();
+      reco_phi[reco_n] = el->superCluster()->phi();
+      reco_n++;
+    }
+  }
+
+  //if (!isData) {
+  event.getByLabel(edm::InputTag("hltPixelVertices"), vtxH);
+  if (!vtxH.failedToGet())
+    nvtx = vtxH->size();
+  else
+    nvtx = 0;
+
+  edm::Handle<double> rhoH;
+  event.getByLabel(edm::InputTag("hltFixedGridRhoFastjetAllCaloForMuons"), rhoH);
+  if (!rhoH.failedToGet())
+    rho = *(rhoH.product());
+  else
+    rho = 9999.;
+
+  //} else 
+  //nvtx = 0;
+
+//  if (oldClustering) {
+//    event.getByLabel( edm::InputTag("hltEleAnyWP80PixelMatchElectronsL1Seeded"), eH);   
+//    event.getByLabel( edm::InputTag("hltL1SeededRecoEcalCandidate"), cH);
+//    
+//    const reco::RecoEcalCandidateIsolationMap* sieieMap = 0;
+//    event.getByLabel(edm::InputTag("hltL1SeededHLTClusterShape"), sieieMapH);
+//    if (!sieieMapH.failedToGet())
+//      sieieMap = sieieMapH.product();
+//    
+//    const reco::RecoEcalCandidateIsolationMap* ecalMap = 0;
+//    event.getByLabel(edm::InputTag("hltL1SeededPhotonEcalIso"), ecalMapH);
+//    if (!ecalMapH.failedToGet()) 
+//      ecalMap = ecalMapH.product(); 
+//    
+//    const reco::RecoEcalCandidateIsolationMap* hcalMap = 0;
+//    event.getByLabel(edm::InputTag("hltL1SeededPhotonHcalIso"), hcalMapH);
+//    if (!hcalMapH.failedToGet()) 
+//      hcalMap = hcalMapH.product(); 
+//    
+//    const reco::RecoEcalCandidateIsolationMap* hoeMap = 0;
+//    event.getByLabel(edm::InputTag("hltL1SeededPhotonHcalForHE"), hoeMapH);
+//    if (!hoeMapH.failedToGet()) 
+//      hoeMap = hoeMapH.product(); 
+//    
+//    const reco::ElectronIsolationMap* tkisoMap = 0;
+//    event.getByLabel(edm::InputTag("hltEleAnyWP80L1SeededElectronTrackIso"), tkisoMapH);
+//    if (!tkisoMapH.failedToGet())
+//      tkisoMap = tkisoMapH.product();          
+//    
+//    const reco::ElectronIsolationMap* detaMap = 0;
+//    event.getByLabel(edm::InputTag("hltEleAnyWP80L1SeededDetaDphi:Deta"), detaMapH);
+//    if (!detaMapH.failedToGet())
+//      detaMap = detaMapH.product();          
+//    
+//    const reco::ElectronIsolationMap* dphiMap = 0;
+//    event.getByLabel(edm::InputTag("hltEleAnyWP80L1SeededDetaDphi:Dphi"), dphiMapH);
+//    if (!dphiMapH.failedToGet())
+//      dphiMap = dphiMapH.product();
+//        
+//    n = 0;
+//    for (unsigned int i=0; i<cH->size(); i++) {
+//      if (n == 9)
+//	continue;
+//      
+//      etawidth[n] = 9999.;
+//      phiwidth[n] = 9999.;
+//      e[n] = 9999.;
+//      et[n] = 9999.;
+//      se[n] = 9999.;
+//      eraw[n] = 9999.;
+//      eta[n] = 9999.;
+//      phi[n] = 9999.;
+//      seta[n] = 9999.;
+//      sphi[n] = 9999.;
+//      sieie[n] = 9999.;
+//      ecal[n] = 9999;
+//      deta[n] = 9999.;
+//      dphi[n] = 9999.;
+//      tkpt[n] = 9999.;
+//      tketa[n] = 9999.;
+//      tkphi[n] = 9999.;
+//      hcal[n] = 9999.;
+//      hoe[n] = 9999.;
+//      tkiso[n] = 9999.;
+//      
+//      reco::RecoEcalCandidateRef c(cH, i);
+//      //std::cout << c->eta() << " " <<  c->phi() << " " << c->et() << std::endl;
+//      //if (c->energy()*sin(c->theta()) < 20.)
+//      //  continue;
+//      eraw[n] = c->superCluster()->rawEnergy();
+//      e[n] = c->energy();//*sin(c->theta());
+//      et[n] = c->energy()*sin(c->theta());
+//      se[n] = c->superCluster()->seed()->energy();//*sin(c->theta());
+//      eta[n] = c->eta();
+//      phi[n] = c->phi();
+//      seta[n] = c->superCluster()->seed()->eta();
+//      sphi[n] = c->superCluster()->seed()->phi();
+//      etawidth[n] = c->superCluster()->etaWidth();
+//      phiwidth[n] = c->superCluster()->phiWidth();
+//      
+//      if (sieieMap != 0)
+//	sieie[n] = (*sieieMap)[c];
+//      
+//      if (ecalMap != 0) 
+//	ecal[n] = (*ecalMap)[c]; 
+//      
+//      if (hoeMap != 0) 
+//	hoe[n] = (*hoeMap)[c]; 
+//      
+//      if (hcalMap != 0) 
+//	hcal[n] = (*hcalMap)[c]; 
+//      
+//      if (!eH.failedToGet()) {
+//	int index  = findEleRef(c, eH);
+//	if (index != -1) {
+//	  reco::ElectronRef e(eH, index);
+//	  
+//	  tkpt[n] = e->track()->pt();
+//	  tketa[n] = e->track()->eta();	
+//	  tkphi[n] = e->track()->phi();
+//	  
+//	  if (detaMap != 0) {
+//	    deta[n] = ((*detaMap)[e]);
+//	  }
+//	  
+//	  if (dphiMap != 0)
+//	    dphi[n] = fabs((*dphiMap)[e]);
+//
+//	  if (tkisoMap != 0)
+//	    tkiso[n] = ((*tkisoMap)[e]);
+//	}
+//      }
+//      n++;
+//    }
+//  }
+
   if (newClustering) {
-    event.getByLabel( edm::InputTag("hltEle27WP80PixelMatchElectronsL1SeededPF"), eH);
-    event.getByLabel( edm::InputTag("hltL1SeededRecoEcalCandidatePF"), cH);
-    
-    const reco::RecoEcalCandidateIsolationMap* sieieMapPF = 0;
-    event.getByLabel(edm::InputTag("hltL1SeededHLTClusterShapePF"), sieieMapH);
-    if (!sieieMapH.failedToGet())  
-      sieieMapPF = sieieMapH.product();
-
-    const reco::RecoEcalCandidateIsolationMap* ecalMapPF = 0;
-    event.getByLabel(edm::InputTag("hltL1SeededPhotonEcalIsoPF"), ecalMapH);
-    if (!ecalMapH.failedToGet()) 
-      ecalMapPF = ecalMapH.product(); 
-
-    const reco::RecoEcalCandidateIsolationMap* hcalMapPF  = 0;
-    event.getByLabel(edm::InputTag("hltL1SeededPhotonHcalIsoPF"), hcalMapH);
-    if (!hcalMapH.failedToGet()) 
-      hcalMapPF = hcalMapH.product(); 
-
-    edm::Handle<reco::RecoEcalCandidateIsolationMap> pfecalMapH;
-    const reco::RecoEcalCandidateIsolationMap* pfecalMapPF = 0;
-    event.getByLabel(edm::InputTag("hltEgammaPFPhotonIsolation"), pfecalMapH);
-    if (!pfecalMapH.failedToGet()) 
-      pfecalMapPF = pfecalMapH.product(); 
-    
-    edm::Handle<reco::RecoEcalCandidateIsolationMap> pfhcalMapH;
-    const reco::RecoEcalCandidateIsolationMap* pfhcalMapPF  = 0;
-    event.getByLabel(edm::InputTag("hltEgammaPFNeutralIsolation"), pfhcalMapH);
-    if (!pfhcalMapH.failedToGet()) 
-      pfhcalMapPF = pfhcalMapH.product(); 
-    
-    const reco::RecoEcalCandidateIsolationMap* hoeMapPF = 0;
-    event.getByLabel(edm::InputTag("hltL1SeededPhotonHcalForHEPF"), hoeMapH);
-    if (!hoeMapH.failedToGet()) 
-      hoeMapPF = hoeMapH.product(); 
-    
-    const reco::ElectronIsolationMap* tkisoMapPF = 0;
-    event.getByLabel(edm::InputTag("hltEle27WP80L1SeededElectronTrackIsoPF"), tkisoMapH);
-    if (!tkisoMapH.failedToGet())
-      tkisoMapPF = tkisoMapH.product();          
-
-    edm::Handle<reco::ElectronIsolationMap> pftkisoMapH;
-    const reco::ElectronIsolationMap* pftkisoMapPF = 0;
-    event.getByLabel(edm::InputTag("hltEgammaPFChargedIsolation"), pftkisoMapH);
-    if (!pftkisoMapH.failedToGet())
-      pftkisoMapPF = pftkisoMapH.product();          
-    
-    const reco::ElectronIsolationMap* detaMapPF = 0;
-    event.getByLabel(edm::InputTag("hltEle27WP80L1SeededDetaDphiPF:Deta"), detaMapH);
-    if (!detaMapH.failedToGet())
-      detaMapPF = detaMapH.product();
-    
-    const reco::ElectronIsolationMap* dphiMapPF = 0;
-    event.getByLabel(edm::InputTag("hltEle27WP80L1SeededDetaDphiPF:Dphi"), dphiMapH);
-    if (!dphiMapH.failedToGet()) 
-      dphiMapPF = dphiMapH.product();
+    event.getByLabel( edm::InputTag("hltEgammaCandidates"), cH);
     
     npf = 0;
-    for (unsigned int i=0; i<cH->size(); i++) {
-      if (npf == 9)
-	continue;
-      chiso[npf] = 9999.;
-      neiso[npf] = 9999.;
-      phiso[npf] = 9999.;
-      etawidthpf[npf] = 9999.;
-      phiwidthpf[npf] = 9999.;
-      epf[npf] = 9999.;
-      sepf[npf] = 9999.;
-      erawpf[npf] = 9999.;
-      etapf[npf] = 9999.;
-      phipf[npf] = 9999.;
-      setapf[npf] = 9999.;
-      sphipf[npf] = 9999.;
-      sieiepf[npf] = 9999.;
-      ecalpf[npf] = 9999;
-      detapf[npf] = 9999.;
-      dphipf[npf] = 9999.;
-      tkptpf[npf] = 9999.;
-      tketapf[npf] = 9999.;
-      tkphipf[npf] = 9999.;
-      hcalpf[npf] = 9999.;
-      hoepf[npf] = 9999.;
-      tkisopf[npf] = 9999.;
+    if (!cH.failedToGet()) {
+    
+      const reco::RecoEcalCandidateIsolationMap* sieieMapPF = 0;
+      event.getByLabel(edm::InputTag("hltEgammaClusterShape"), sieieMapH);
+      if (!sieieMapH.failedToGet())  
+	sieieMapPF = sieieMapH.product();
       
-      reco::RecoEcalCandidateRef c(cH, i);
-      //std::cout << c->eta() << " " <<  c->phi() << " " << c->et() << std::endl;
-      //if (c->energy()*sin(c->theta()) < 20.)
-      //  continue;
+      const reco::RecoEcalCandidateIsolationMap* ecalMapPF = 0;
+      event.getByLabel(edm::InputTag("hltEgammaEcalPFClusterIso"), ecalMapH);
+      if (!ecalMapH.failedToGet()) 
+	ecalMapPF = ecalMapH.product(); 
       
-      erawpf[npf] = c->superCluster()->rawEnergy();
-      etawidthpf[npf] = c->superCluster()->etaWidth();
-      phiwidthpf[npf] = c->superCluster()->phiWidth();
-      epf[npf] = c->energy();//*sin(c->theta());
-      sepf[npf] = c->superCluster()->seed()->energy();//*sin(c->theta());
-      etapf[npf] = c->eta();
-      phipf[npf] = c->phi();
-      setapf[npf] = c->superCluster()->seed()->eta();
-      sphipf[npf] = c->superCluster()->seed()->phi();
-      if (sieieMapPF != 0)
-	sieiepf[npf] = (*sieieMapPF)[c];
-      if (ecalMapPF != 0)
-	ecalpf[npf] = (*ecalMapPF)[c]; 
-
-      if (pfecalMapPF != 0)
-	phiso[npf] = (*pfecalMapPF)[c]; 
-
-      if (hoeMapPF != 0) 
-	hoepf[npf] = (*hoeMapPF)[c]; 
-
-      if (hcalMapPF != 0) 
-	hcalpf[npf] = (*hcalMapPF)[c]; 
-
-      if (pfhcalMapPF != 0) 
-	neiso[npf] = (*pfhcalMapPF)[c]; 
+      const reco::RecoEcalCandidateIsolationMap* hcalMapPF  = 0;
+      event.getByLabel(edm::InputTag("hltEgammaHcalPFClusterIso"), hcalMapH);
+      if (!hcalMapH.failedToGet()) 
+	hcalMapPF = hcalMapH.product(); 
       
-      if (!eH.failedToGet()) {
-	int index = findEleRef(c, eH);
-	if (index != -1) {
-	  reco::ElectronRef e(eH, index);
+      const reco::RecoEcalCandidateIsolationMap* hoeMapPF = 0;
+      event.getByLabel(edm::InputTag("hltEgammaHoverE"), hoeMapH);
+      if (!hoeMapH.failedToGet()) 
+	hoeMapPF = hoeMapH.product(); 
+      
+      const reco::RecoEcalCandidateIsolationMap* tkisoMapPF = 0;
+      event.getByLabel(edm::InputTag("hltEgammaEleGsfTrackIso"), tkisoMapH);
+      if (!tkisoMapH.failedToGet())
+	tkisoMapPF = tkisoMapH.product();          
+      
+      const reco::RecoEcalCandidateIsolationMap* detaMapPF = 0;
+      event.getByLabel(edm::InputTag("hltEgammaGsfTrackVars:Deta"), detaMapH);
+      if (!detaMapH.failedToGet())
+	detaMapPF = detaMapH.product();
+      
+      const reco::RecoEcalCandidateIsolationMap* dphiMapPF = 0;
+      event.getByLabel(edm::InputTag("hltEgammaGsfTrackVars:Dphi"), dphiMapH);
+      if (!dphiMapH.failedToGet()) 
+	dphiMapPF = dphiMapH.product();
+      
+      const reco::RecoEcalCandidateIsolationMap* eopMapPF = 0;
+      event.getByLabel(edm::InputTag("hltEgammaGsfTrackVars:OneOESuperMinusOneOP"), eopMapH);
+      if (!eopMapH.failedToGet()) 
+	eopMapPF = eopMapH.product();
 
-	  tkptpf[npf] = e->track()->pt();
-	  tketapf[npf] = e->track()->eta();	
-	  tkphipf[npf] = e->track()->phi();
+      const reco::RecoEcalCandidateIsolationMap* chi2MapPF = 0;
+      event.getByLabel(edm::InputTag("hltEgammaGsfTrackVars:Chi2"), chi2MapH);
+      if (!chi2MapH.failedToGet()) 
+	chi2MapPF = chi2MapH.product();
 
-	  if (detaMapPF != 0)
-	    detapf[npf] = ((*detaMapPF)[e]);
+      const reco::RecoEcalCandidateIsolationMap* mishitsMapPF = 0;
+      event.getByLabel(edm::InputTag("hltEgammaGsfTrackVars:MissingHits"), mishitsMapH);
+      if (!mishitsMapH.failedToGet()) 
+	mishitsMapPF = mishitsMapH.product();
 
-	  if (dphiMapPF != 0)
-	    dphipf[npf] = fabs((*dphiMapPF)[e]);
+      const reco::RecoEcalCandidateIsolationMap* hitsMapPF = 0;
+      event.getByLabel(edm::InputTag("hltEgammaGsfTrackVars:ValidHits"), hitsMapH);
+      if (!hitsMapH.failedToGet()) 
+	hitsMapPF = hitsMapH.product();
+      
+      for (unsigned int i=0; i<cH->size(); i++) {
+	if (npf == 9)
+	  continue;
+	etawidthpf[npf] = 9999.;
+	phiwidthpf[npf] = 9999.;
+	epf[npf] = 9999.;
+	eoppf[npf] = 9999.;
+	etpf[npf] = 9999.;
+	sepf[npf] = 9999.;
+	erawpf[npf] = 9999.;
+	etapf[npf] = 9999.;
+	phipf[npf] = 9999.;
+	setapf[npf] = 9999.;
+	sphipf[npf] = 9999.;
+	sieiepf[npf] = 9999.;
+	ecalpf[npf] = 9999;
+	detapf[npf] = 9999.;
+	dphipf[npf] = 9999.;
+	tkptpf[npf] = 9999.;
+	tketapf[npf] = 9999.;
+	tkphipf[npf] = 9999.;
+	hcalpf[npf] = 9999.;
+	hoepf[npf] = 9999.;
+	tkisopf[npf] = 9999.;
+	mishitspf[npf] = 9999.;
+	chi2pf[npf] = 9999.;
+	hitspf[npf] = 9999.;
 
-	  if (tkisoMapPF != 0)
-	    tkisopf[npf] = fabs((*tkisoMapPF)[e]);
-	  if (pftkisoMapPF != 0)
-	    chiso[npf] = fabs((*pftkisoMapPF)[e]);
-	  
-	} 
+	reco::RecoEcalCandidateRef c(cH, i);
+	//std::cout << c->eta() << " " <<  c->phi() << " " << c->et() << std::endl;
+	//if (c->energy()*sin(c->theta()) < 20.)
+	//  continue;
+	
+	//erawpf[npf] = c->superCluster()->rawEnergy();
+	//etawidthpf[npf] = c->superCluster()->etaWidth();
+	//phiwidthpf[npf] = c->superCluster()->phiWidth();
+	epf[npf] = c->energy();//*sin(c->theta());
+	etpf[npf] = c->energy()*sin(c->theta());
+	//sepf[npf] = c->superCluster()->seed()->energy();//*sin(c->theta());
+	etapf[npf] = c->eta();
+	phipf[npf] = c->phi();
+	//setapf[npf] = c->superCluster()->seed()->eta();
+	//sphipf[npf] = c->superCluster()->seed()->phi();
+	if (sieieMapPF != 0)
+	  sieiepf[npf] = (*sieieMapPF)[c];
+	if (ecalMapPF != 0)
+	  ecalpf[npf] = (*ecalMapPF)[c]; 
+	
+	if (hoeMapPF != 0) 
+	  hoepf[npf] = (*hoeMapPF)[c]; 
+	
+	if (hcalMapPF != 0) 
+	  hcalpf[npf] = (*hcalMapPF)[c]; 
+	
+	if (detaMapPF != 0)
+	  detapf[npf] = ((*detaMapPF)[c]);
+	
+	if (dphiMapPF != 0)
+	  dphipf[npf] = fabs((*dphiMapPF)[c]);
+	
+	if (eopMapPF != 0)
+	  eoppf[npf] = fabs((*eopMapPF)[c]);
+	
+	if (mishitsMapPF != 0)
+	  mishitspf[npf] = (*mishitsMapPF)[c];
+
+	if (hitsMapPF != 0)
+	  hitspf[npf] = (*hitsMapPF)[c];
+
+	if (chi2MapPF != 0)
+	  chi2pf[npf] = (*chi2MapPF)[c];
+	
+	if (tkisoMapPF != 0)
+	  tkisopf[npf] = fabs((*tkisoMapPF)[c]);
+	
+	npf++;
       }
-      npf++;
     }
   } 
-  
+
   t->Fill();
 }
  
 void plotDistr::beginJob() {
   f = new TFile(outputFileName.c_str(), "recreate");
   t = new TTree("tree", "tree");
-
-  if (offline) {
-    t->Branch("el_n",   &el_n,   "el_n/I");
-    t->Branch("el_e",  &el_e,  "el_e[el_n]/F");     
-    t->Branch("el_eta", &el_eta, "el_eta[el_n]/F");     
-    t->Branch("el_phi", &el_phi, "el_phi[el_n]/F");   
-    t->Branch("el_sieie", &el_sieie, "el_sieie[el_n]/F");
-    t->Branch("el_ecal", &el_ecal, "el_ecal[el_n]/F");
-    t->Branch("el_hcal", &el_hcal, "el_hcal[el_n]/F");
-    t->Branch("el_hoe", &el_hoe, "el_hoe[el_n]/F");
-    t->Branch("el_tkiso", &el_tkiso, "el_tkiso[el_n]");
-    t->Branch("el_deta", &el_deta, "el_deta[el_n]/F");
-    t->Branch("el_dphi", &el_dphi, "el_dphi[el_n]/F");
-  }
   
   if (oldClustering) {
     t->Branch("n",  &n, "n/I");
     t->Branch("ewidth", &etawidth, "ewidth[n]/F");
     t->Branch("pwidth", &phiwidth, "pwidth[n]/F");
     t->Branch("e", &e, "e[n]/F");
+    t->Branch("et", &et, "et[n]/F");
     t->Branch("se", &se, "se[n]/F");
     t->Branch("eraw", &eraw, "eraw[n]/F");
     t->Branch("eta", &eta, "eta[n]/F");
@@ -545,19 +611,22 @@ void plotDistr::beginJob() {
     t->Branch("tkiso",   &tkiso, "tkiso[n]/F");
   }
   
-  //t->Branch("nvtx", &nvtx, "nvtx/I");
+  t->Branch("pass", &passSel, "pass/I");
+  t->Branch("nvtx", &nvtx, "nvtx/I");
+  t->Branch("rho",  &rho, "rho/F");
   
   if (newClustering) {
     t->Branch("npf",  &npf, "npf/I");
-    t->Branch("ewidthpf", &etawidthpf, "ewidthpf[npf]/F");
-    t->Branch("pwidthpf", &phiwidthpf, "pwidthpf[npf]/F");
+    //t->Branch("ewidthpf", &etawidthpf, "ewidthpf[npf]/F");
+    //t->Branch("pwidthpf", &phiwidthpf, "pwidthpf[npf]/F");
     t->Branch("epf", &epf, "epf[npf]/F");
+    t->Branch("etpf", &etpf, "etpf[npf]/F");
     t->Branch("sepf", &sepf, "sepf[npf]/F");
-    t->Branch("erawpf", &erawpf, "erawpf[npf]/F");
+    //t->Branch("erawpf", &erawpf, "erawpf[npf]/F");
     t->Branch("etapf", &etapf, "etapf[npf]/F");
     t->Branch("phipf", &phipf, "phipf[npf]/F");
-    t->Branch("setapf", &setapf, "setapf[npf]/F");
-    t->Branch("sphipf", &sphipf, "sphipf[npf]/F");
+    //t->Branch("setapf", &setapf, "setapf[npf]/F");
+    //t->Branch("sphipf", &sphipf, "sphipf[npf]/F");
     t->Branch("sieiepf", &sieiepf, "sieiepf[npf]/F");
     t->Branch("ecalpf", &ecalpf, "ecalpf[npf]/F");
     //t->Branch("eop", &eoppf, "eoppf[npf]/F");
@@ -572,6 +641,26 @@ void plotDistr::beginJob() {
     t->Branch("chiso",   &chiso, "chiso[npf]/F");
     t->Branch("phiso",   &phiso, "phiso[npf]/F");
     t->Branch("neiso",   &neiso, "neiso[npf]/F");
+    t->Branch("eoppf", &eoppf, "eoppf[npf]/F");
+    t->Branch("chi2pf", &chi2pf, "chi2pf[npf]/F");
+    t->Branch("mishitspf", &mishitspf, "mishitspf[npf]/I");
+    t->Branch("hitspf", &hitspf, "hitspf[npf]/I");
+  }
+  
+  if (saveUnseeded) {   
+    t->Branch("nuns",  &nuns, "nuns/I");
+    t->Branch("euns", &euns, "euns[nuns]/F");
+    t->Branch("etuns", &etuns, "etuns[nuns]/F");
+    t->Branch("etauns", &etauns, "etauns[nuns]/F");
+    t->Branch("phiuns", &phiuns, "phiuns[nuns]/F");
+  }
+
+  if (saveReco) {
+    t->Branch("recon",   &reco_n,   "recon/I");
+    t->Branch("recoet",  &reco_et,  "recoet[recon]/F");
+    t->Branch("recopt",  &reco_pt,  "recopt[recon]/F");
+    t->Branch("recoeta", &reco_eta, "recoeta[recon]/F");
+    t->Branch("recophi", &reco_phi, "recophi[recon]/F");
   }
 
   if (!isData) {

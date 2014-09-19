@@ -1,4 +1,4 @@
-# /users/sani/DoubleEle2014/V44 (CMSSW_7_1_6)
+# /users/sani/DoubleEle2014/V41 (CMSSW_7_1_6)
 
 import FWCore.ParameterSet.Config as cms
 
@@ -6,7 +6,7 @@ process = cms.Process( "TEST" )
 process.load("setup_cff")
 
 process.HLTConfigVersion = cms.PSet(
-  tableName = cms.string('/users/sani/DoubleEle2014/V44')
+  tableName = cms.string('/users/sani/DoubleEle2014/V41')
 )
 
 process.HLTIter4PSetTrajectoryFilterIT = cms.PSet( 
@@ -4247,10 +4247,6 @@ process.hltL1sL1SingleEG20ORL1SingleEG22 = cms.EDFilter( "HLTLevel1GTSeed",
     L1GtObjectMapTag = cms.InputTag( "hltL1GtObjectMap" ),
     L1TechTriggerSeeding = cms.bool( False )
 )
-process.hltPreEle25Ele5Mass60 = cms.EDFilter( "HLTPrescaler",
-    L1GtReadoutRecordTag = cms.InputTag( "hltGtDigis" ),
-    offset = cms.uint32( 0 )
-)
 process.hltEGL1SingleEG20ORL1SingleEG22Filter = cms.EDFilter( "HLTEgammaL1MatchFilterRegional",
     doIsolated = cms.bool( False ),
     endcap_end = cms.double( 2.65 ),
@@ -4800,7 +4796,7 @@ process.hltEle25Ele5PixelMatchUnseededFilter = cms.EDFilter( "HLTElectronPixelMa
     candTag = cms.InputTag( "hltEle25Ele5EtUnseededFilter" ),
     tanhSO10ForwardThres = cms.double( 1.0 ),
     L1IsoPixelSeedsTag = cms.InputTag( "hltEgammaElectronPixelSeedsUnseeded" ),
-    L1NonIsoCand = cms.InputTag( "" ),
+    L1NonIsoCand = cms.InputTag( "hltEgammaCandidatesUnseeded" ),
     ncandcut = cms.int32( 2 ),
     tanhSO10BarrelThres = cms.double( 0.35 ),
     s_a_rF = cms.double( 0.04 ),
@@ -5065,7 +5061,7 @@ process.hltPreAOutput = cms.EDFilter( "HLTPrescaler",
 
 
 process.hltOutputA = cms.OutputModule( "PoolOutputModule",
-    fileName = cms.untracked.string( "output_bkg_ElEl.root" ),
+    fileName = cms.untracked.string( "output_sig_ElEl.root" ),
     fastCloning = cms.untracked.bool( False ),
     dataset = cms.untracked.PSet(
         filterName = cms.untracked.string( "" ),
@@ -5091,6 +5087,7 @@ process.hltOutputA = cms.OutputModule( "PoolOutputModule",
                                             'keep triggerTriggerEvent_*_*_*' 
                                             )
 )
+
 
 
 process.HLTL1UnpackerSequence = cms.Sequence( process.hltGtDigis + process.hltGctDigis + process.hltL1GtObjectMap + process.hltL1extraParticles )
@@ -5119,16 +5116,30 @@ process.HLTEle25Ele5Mass60Sequence = cms.Sequence( process.HLTDoFullUnpackingEga
 process.HLTEle25SC4Mass60Sequence = cms.Sequence( process.HLTDoFullUnpackingEgammaEcalSequence + process.HLTPFClusteringForEgamma + process.hltEgammaCandidates + process.hltEGL1SingleEG20ORL1SingleEG22Filter + process.hltEle25SC4EtFilter + process.hltEgammaClusterShape + process.hltEle25SC4ClusterShapeFilter + process.HLTDoLocalHcalWithTowerSequence + process.HLTFastJetForEgamma + process.hltEgammaHoverE + process.hltEle25SC4HEFilter + process.hltEgammaEcalPFClusterIso + process.hltEle25SC4EcalIsoFilter + process.HLTPFHcalClusteringForEgamma + process.hltEgammaHcalPFClusterIso + process.hltEle25SC4HcalIsoFilter + process.HLTDoLocalPixelSequence + process.HLTDoLocalStripSequence + process.hltMixedLayerPairs + process.hltEgammaElectronPixelSeeds + process.hltEle25SC4PixelMatchFilter + process.HLTGsfElectronSequence + process.hltEle25SC4OneOEMinusOneOPFilter + process.hltEle25SC4DetaFilter + process.hltEle25SC4DphiFilter + process.HLTTrackReconstructionForIsoElectronIter02 + process.hltEgammaEleGsfTrackIso + process.hltEle25SC4TrackIsoFilter + process.HLTPFClusteringForEgammaUnseeded + process.hltEgammaCandidatesUnseeded + process.hltEgammaCandidatesWrapperUnseeded + process.hltEle25SC4EtUnseededFilter + process.hltEle25SC4Mass60Filter )
 
 #process.HLT_Ele23_Ele12_CaloId_TrackId_Iso_v1 = cms.Path( process.HLTBeginSequence + process.hltL1sL1DoubleEG137 + process.hltPreEle25SC4Mass60 + process.HLTEle23Ele12CaloIdTrackIdIsoSequence + process.HLTEndSequence )
-process.HLT_Ele25_Ele5_Mass60_v1 = cms.Path( process.HLTBeginSequence + process.hltL1sL1SingleEG20ORL1SingleEG22 + process.hltPreEle25Ele5Mass60 + process.HLTEle25Ele5Mass60Sequence + process.HLTEndSequence )
-#process.HLT_Ele25_SC4_Mass60_v1 = cms.Path( process.HLTBeginSequence + process.hltL1sL1SingleEG20ORL1SingleEG22 + process.hltPreEle25SC4Mass60 + process.HLTEle25SC4Mass60Sequence + process.HLTEndSequence )
+process.HLT_Ele25_Ele5_Mass60_v1 = cms.Path( process.HLTBeginSequence + process.hltL1sL1SingleEG20ORL1SingleEG22 + process.HLTEle25Ele5Mass60Sequence + process.hltPreEle25SC4Mass60 + process.HLTEndSequence )
+#process.HLT_Ele25_SC4_Mass60_v1 = cms.Path( process.HLTBeginSequence + process.hltL1sL1SingleEG20ORL1SingleEG22 + process.HLTEle25SC4Mass60Sequence + process.hltPreEle25SC4Mass60 + process.HLTEndSequence )
 process.HLTriggerFinalPath = cms.Path( process.hltGtDigis + process.hltScalersRawToDigi + process.hltFEDSelector + process.hltTriggerSummaryAOD + process.hltTriggerSummaryRAW )
 process.HLTAnalyzerEndpath = cms.EndPath( process.hltL1GtTrigReport + process.hltTrigReport )
 process.AOutput = cms.EndPath( process.hltPreAOutput + process.hltOutputA)
 
-
 process.source = cms.Source( "PoolSource",
     fileNames = cms.untracked.vstring(
-        'file:/afs/cern.ch/work/b/beaucero/public/L1EG20SkimOver2012Data4RateStudies/Skim207884_L1EG20OR22.root ',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/1677F86D-D7FE-E311-820C-00261894382A.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/40C8638A-D9FE-E311-95B4-0025905A607E.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/484C4FE2-DCFE-E311-81EB-0025905A60EE.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/48975963-D9FE-E311-84C8-0025905964C4.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/56D9BC50-D9FE-E311-A43C-00261894386F.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/62AC7AE6-D8FE-E311-8457-0025905A60E4.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/640B5416-D8FE-E311-AD31-0025905964B2.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/8A2F71E5-D8FE-E311-ABA0-002618943800.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/98881F81-D7FE-E311-B4C3-0025905A60AA.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/A69ED951-D8FE-E311-BBD3-003048FF86CA.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/A8F2C388-D9FE-E311-9E47-0025905A609E.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/C2614B1D-DAFE-E311-B609-0025905A606A.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/CC627B9C-D9FE-E311-A574-00261894385A.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/D2F173D1-DAFE-E311-B269-0025905A60F8.root',
+'/store/relval/CMSSW_7_1_0/RelValZEE_13/GEN-SIM-DIGI-RAW-HLTDEBUG/PU25ns_POSTLS171_V15-v1/00000/EC4A7845-DBFE-E311-A716-002618FDA248.root',
+
     ),
     secondaryFileNames = cms.untracked.vstring(
     ),
@@ -5140,6 +5151,10 @@ process.source = cms.Source( "PoolSource",
 # Enable HF Noise filters in GRun menu
 if 'hltHfreco' in process.__dict__:
     process.hltHfreco.setNoiseFlags = cms.bool( True )
+
+# customise the HLT menu for running on MC
+from HLTrigger.Configuration.customizeHLTforMC import customizeHLTforMC
+process = customizeHLTforMC(process)
 
 # CMSSW version specific customizations
 import os
@@ -5195,7 +5210,7 @@ process.options = cms.untracked.PSet(
 # override the GlobalTag, connection string and pfnPrefix
 if 'GlobalTag' in process.__dict__:
     from Configuration.AlCa.GlobalTag import GlobalTag as customiseGlobalTag
-    process.GlobalTag = customiseGlobalTag(process.GlobalTag, globaltag = 'auto:hltonline_GRun')
+    process.GlobalTag = customiseGlobalTag(process.GlobalTag, globaltag = 'auto:startup_GRun')
     process.GlobalTag.connect   = 'frontier://FrontierProd/CMS_COND_31X_GLOBALTAG'
     process.GlobalTag.pfnPrefix = cms.untracked.string('frontier://FrontierProd/')
     for pset in process.GlobalTag.toGet.value():

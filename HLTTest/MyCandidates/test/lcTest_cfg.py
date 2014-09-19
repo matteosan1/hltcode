@@ -6,8 +6,7 @@ process.load('Configuration.Geometry.GeometryDB_cff')
 process.load('Configuration/StandardSequences/MagneticField_38T_cff')
 process.load('Configuration/StandardSequences/FrontierConditions_GlobalTag_cff')
 process.load("Configuration.StandardSequences.Reconstruction_cff")
-process.GlobalTag.globaltag = 'PRE_ST62_V8::All'
-#START53_V10::All'
+process.GlobalTag.globaltag = 'START53_V7D::All'
 
 process.maxEvents = cms.untracked.PSet(
     input = cms.untracked.int32(-1)
@@ -15,10 +14,16 @@ process.maxEvents = cms.untracked.PSet(
 
 
 process.source = cms.Source("PoolSource",
-                            fileNames = cms.untracked.vstring('file:../../../outputA_test.root')
+                            fileNames = cms.untracked.vstring('file:../../../crys_old.root')
                             )
 
-process.plotDistr = cms.EDAnalyzer("checkClustering")
+process.plotDistr = cms.EDAnalyzer("plotDistr",
+                                   OutputFileName = cms.string("crys_old.root"),
+                                   isData = cms.bool(True),
+                                   activateNewClustering = cms.bool(False),
+                                   activateOldClustering = cms.bool(True),
+                                   saveReco = cms.bool(True)
+                                   )
 process.p = cms.Path(process.plotDistr)
 
                                         
