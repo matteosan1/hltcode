@@ -154,8 +154,8 @@ void EgammaHLTGsfTrackVarProducer::produce(edm::Event& iEvent, const edm::EventS
 	  if(fabs(1/scRef->seed()->energy() - 1/trkP)<oneOverESeedMinusOneOverPValue) oneOverESeedMinusOneOverPValue =fabs(1/scRef->seed()->energy() - 1/trkP);
 	}
 
-	if (gsfTracks[trkNr]->trackerExpectedHitsInner().numberOfLostHits() < missingHitsValue) 
-	  missingHitsValue = gsfTracks[trkNr]->trackerExpectedHitsInner().numberOfLostHits();
+	if (gsfTracks[trkNr]->hitPattern().numberOfHits(reco::HitPattern::MISSING_INNER_HITS) < missingHitsValue) 
+	  missingHitsValue = gsfTracks[trkNr]->hitPattern().numberOfHits(reco::HitPattern::MISSING_INNER_HITS);
 	
 	if (gsfTracks[trkNr]->numberOfValidHits() < validHitsValue)
 	  validHitsValue = gsfTracks[trkNr]->numberOfValidHits();
