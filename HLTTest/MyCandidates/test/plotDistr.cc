@@ -64,6 +64,8 @@
 #include "DataFormats/RecoCandidate/interface/RecoEcalCandidateFwd.h"
 #include "DataFormats/RecoCandidate/interface/RecoEcalCandidateIsolation.h"
 
+#include "SimDataFormats/PileupSummaryInfo/interface/PileupSummaryInfo.h"
+
 #include "DataFormats/HepMCCandidate/interface/GenParticle.h"
 
 #include "DataFormats/Math/interface/deltaR.h"
@@ -72,6 +74,8 @@
 #include "TLorentzVector.h"
 #include "TFile.h"
 #include "TTree.h"
+#include "TH1F.h"
+#include "TH2F.h"
 
 #include <string>
 #include <iostream>
@@ -91,6 +95,7 @@ private:
   virtual void analyze(const edm::Event&, const edm::EventSetup&);
   virtual void endJob() ;
 
+  edm::InputTag hitEBLabel_, hitEELabel_;
   edm::InputTag trigResultsTag_;
   HLTConfigProvider hltConfig_; 
   std::vector<std::string> pathNames_;
@@ -100,7 +105,7 @@ private:
   TTree* t;
   
   Float_t rho;
-  Int_t passSel;
+  Int_t passSel[3];
   Int_t n, npf, gp_n, reco_n, nuns;
   Float_t etawidth[10], phiwidth[10];
   Float_t etawidthpf[10], phiwidthpf[10];
@@ -163,6 +168,8 @@ private:
   Float_t reco_eta[10];
   Float_t reco_phi[10];
 
+  float truePU;
+  int bxPU[16];
   Int_t nvtx;
 
   bool isData;
@@ -170,6 +177,9 @@ private:
   bool saveUnseeded;
   bool newClustering;
   bool oldClustering;
+
+  TH1F* timeEB, *timeEE;
+  TH2F* timeEB2D, *timeEE2D;
 };
 
 void plotDistr::beginRun(const edm::Run& run,const edm::EventSetup& setup) {
@@ -189,6 +199,13 @@ plotDistr::plotDistr(const edm::ParameterSet& iConfig) {
   saveUnseeded    = iConfig.getParameter<bool>("saveUnseeded");
   pathNames_      = iConfig.getParameter<std::vector<std::string>>("trgSelection");
   trigResultsTag_ = iConfig.getParameter<edm::InputTag>("trgResults");
+  hitEBLabel_     = iConfig.getParameter<edm::InputTag>("hitEBLabel");
+  hitEELabel_     = iConfig.getParameter<edm::InputTag>("hitEELabel");
+
+  timeEB   = new TH1F("timeEB",   "", 400, -100, 100);
+  timeEE   = new TH1F("timeEE",   "", 400, -100, 100);
+  timeEB2D = new TH2F("timeEB2D", "", 400, -100, 100, 100, 0, 100);
+  timeEE2D = new TH2F("timeEE2D", "", 400, -100, 100, 100, 0, 100);
 }
 
 plotDistr::~plotDistr() 
@@ -214,7 +231,7 @@ void plotDistr::mcTruth(edm::Handle<reco::GenParticleCollection> gpH) {
     
     const reco::GenParticleRef gp(gpH, i);
     
-    if (gp->status() == 3 and abs(gp->pdgId()) == 11) {
+    if ((gp->status() >=20 and gp->status() <=29) and abs(gp->pdgId()) == 11) {
       if (gp->pt() > 0.) {
 	gp_pt[gp_n]  = gp->pt();
 	gp_eta[gp_n] = gp->eta();
@@ -232,17 +249,51 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
   const edm::TriggerResults& trigResults = *trigResultsHandle;
   const edm::TriggerNames& trigNames = event.triggerNames(trigResults);  
 
-  passSel = 0; 
   for(size_t pathNr=0;pathNr<pathNames_.size();pathNr++){
+    passSel[pathNr] = 0;
     size_t pathIndex = trigNames.triggerIndex(pathNames_[pathNr]);
     if(pathIndex<trigResults.size() &&  trigResults.accept(pathIndex)) 
-      passSel = 1;
+      passSel[pathNr] = 1;
   }
+  
+  truePU = 9999.;
+  for (int i=0; i<16; i++)
+    bxPU[i] = 9999;
 
   edm::Handle<reco::GenParticleCollection> gpH;
   if (!isData) {
     event.getByLabel("genParticles", gpH);
     mcTruth(gpH);
+    
+    edm::Handle<std::vector<PileupSummaryInfo>> puH;
+    event.getByLabel("addPileupInfo", puH);
+    truePU = (*puH)[0].getTrueNumInteractions();
+    for (unsigned int j=0; j<puH->size(); j++)
+      bxPU[j] = (*puH)[j].getPU_NumInteractions();
+  }
+
+  edm::Handle<EcalRecHitCollection> hitEBH, hitEEH;
+  event.getByLabel(hitEBLabel_, hitEBH);
+  event.getByLabel(hitEELabel_, hitEEH);
+
+  if (!hitEBH.failedToGet()) {
+    const EcalRecHitCollection* ec = hitEBH.product();
+    for(EcalRecHitCollection::const_iterator recHit = (*ec).begin(); recHit != (*ec).end(); ++recHit) {
+      //if (fabs(recHit->time()) < 10.) {
+      timeEB->Fill(recHit->time());
+      timeEB2D->Fill(recHit->time(), recHit->energy());
+      //}
+    }
+  }
+
+  if (!hitEEH.failedToGet()) {
+    const EcalRecHitCollection* ec2 = hitEEH.product();
+    for(EcalRecHitCollection::const_iterator recHit = (*ec2).begin(); recHit != (*ec2).end(); ++recHit) {
+      //if (fabs(recHit->time()) < 10.) {
+      timeEE->Fill(recHit->time());
+      timeEE2D->Fill(recHit->time(), recHit->energy());
+      //}
+    }
   }
 
   edm::Handle<std::vector<reco::Electron> > eH;
@@ -445,7 +496,7 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
     if (!cH.failedToGet()) {
     
       const reco::RecoEcalCandidateIsolationMap* sieieMapPF = 0;
-      event.getByLabel(edm::InputTag("hltEgammaClusterShape"), sieieMapH);
+      event.getByLabel(edm::InputTag("hltEgammaClusterShape:sigmaIEtaIEta5x5"), sieieMapH);
       if (!sieieMapH.failedToGet())  
 	sieieMapPF = sieieMapH.product();
       
@@ -611,7 +662,7 @@ void plotDistr::beginJob() {
     t->Branch("tkiso",   &tkiso, "tkiso[n]/F");
   }
   
-  t->Branch("pass", &passSel, "pass/I");
+  t->Branch("passHLT", &passSel, "passHLT[3]/I");
   t->Branch("nvtx", &nvtx, "nvtx/I");
   t->Branch("rho",  &rho, "rho/F");
   
@@ -668,12 +719,19 @@ void plotDistr::beginJob() {
     t->Branch("gppt",  &gp_pt,  "gppt[gpn]/F");
     t->Branch("gpeta", &gp_eta, "gpeta[gpn]/F");
     t->Branch("gpphi", &gp_phi, "gpphi[gpn]/F");
+    
+    t->Branch("truePU", &truePU, "truePU/F");
+    t->Branch("bxPU", &bxPU, "bxPU[16]/I");
   }
 }
 
 void plotDistr::endJob() {
   f->cd();
   t->Write();
+  timeEB->Write();
+  timeEE->Write();
+  timeEB2D->Write();
+  timeEE2D->Write();
   f->Close();
 }
 
