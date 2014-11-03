@@ -41,6 +41,7 @@ EgammaHLTGsfTrackVarProducer::EgammaHLTGsfTrackVarProducer(const edm::ParameterS
  
   //register your products
   produces < reco::RecoEcalCandidateIsolationMap >( "Deta" ).setBranchAlias( "deta" );
+  produces < reco::RecoEcalCandidateIsolationMap >( "DetaSeed" ).setBranchAlias( "detaseed" );
   produces < reco::RecoEcalCandidateIsolationMap >( "Dphi" ).setBranchAlias( "dphi" );
   produces < reco::RecoEcalCandidateIsolationMap >( "OneOESuperMinusOneOP" );
   produces < reco::RecoEcalCandidateIsolationMap >( "OneOESeedMinusOneOP" );
@@ -85,6 +86,7 @@ void EgammaHLTGsfTrackVarProducer::produce(edm::Event& iEvent, const edm::EventS
   iSetup.get<IdealMagneticFieldRecord>().get(theMagField);
 
   reco::RecoEcalCandidateIsolationMap dEtaMap;
+  reco::RecoEcalCandidateIsolationMap dEtaSeedMap;
   reco::RecoEcalCandidateIsolationMap dPhiMap;
   reco::RecoEcalCandidateIsolationMap oneOverESuperMinusOneOverPMap;
   reco::RecoEcalCandidateIsolationMap oneOverESeedMinusOneOverPMap;
@@ -122,18 +124,21 @@ void EgammaHLTGsfTrackVarProducer::produce(edm::Event& iEvent, const edm::EventS
     float chi2Value = 9999999.;
     float missingHitsValue = 9999999;
     float dEtaInValue=999999;
+    float dEtaSeedInValue=999999;
     float dPhiInValue=999999;
     float oneOverESuperMinusOneOverPValue=999999;
     float oneOverESeedMinusOneOverPValue=999999;
     
     if(static_cast<int>(gsfTracks.size())>=upperTrackNrToRemoveCut_){
       dEtaInValue=0;
+      dEtaSeedInValue=0;
       dPhiInValue=0;
       missingHitsValue = 0;
       validHitsValue = 0;
       chi2Value = 0;
     }else if(static_cast<int>(gsfTracks.size())<=lowerTrackNrToRemoveCut_){
       dEtaInValue=0;
+      dEtaSeedInValue=0;
       dPhiInValue=0;
       missingHitsValue = 0;
       validHitsValue = 0;
@@ -154,6 +159,10 @@ void EgammaHLTGsfTrackVarProducer::produce(edm::Event& iEvent, const edm::EventS
 	  if(fabs(1/scRef->seed()->energy() - 1/trkP)<oneOverESeedMinusOneOverPValue) oneOverESeedMinusOneOverPValue =fabs(1/scRef->seed()->energy() - 1/trkP);
 	}
 
+	// Code for 71X
+	//if (gsfTracks[trkNr]->trackerExpectedHitsInner().numberOfLostHits() < missingHitsValue) 
+	//  missingHitsValue = gsfTracks[trkNr]->trackerExpectedHitsInner().numberOfLostHits();
+	// Code for 72X
 	if (gsfTracks[trkNr]->hitPattern().numberOfHits(reco::HitPattern::MISSING_INNER_HITS) < missingHitsValue) 
 	  missingHitsValue = gsfTracks[trkNr]->hitPattern().numberOfHits(reco::HitPattern::MISSING_INNER_HITS);
 	
@@ -165,12 +174,17 @@ void EgammaHLTGsfTrackVarProducer::produce(edm::Event& iEvent, const edm::EventS
 
 	if (fabs(scAtVtx.dEta())<dEtaInValue) 
 	  dEtaInValue=fabs(scAtVtx.dEta()); //we are allowing them to come from different tracks
+
+	if (fabs(scAtVtx.dEta())<dEtaSeedInValue) 
+	  dEtaSeedInValue = fabs(scAtVtx.dEta()-scRef->position().eta()+scRef->seed()->position().eta());
+
 	if (fabs(scAtVtx.dPhi())<dPhiInValue) 
 	  dPhiInValue=fabs(scAtVtx.dPhi());//we are allowing them to come from different tracks
       }	
     }
    
     dEtaMap.insert(recoEcalCandRef, dEtaInValue);
+    dEtaSeedMap.insert(recoEcalCandRef, dEtaSeedInValue);
     dPhiMap.insert(recoEcalCandRef, dPhiInValue);
     oneOverESuperMinusOneOverPMap.insert(recoEcalCandRef,oneOverESuperMinusOneOverPValue);   
     oneOverESeedMinusOneOverPMap.insert(recoEcalCandRef,oneOverESeedMinusOneOverPValue);
@@ -180,6 +194,7 @@ void EgammaHLTGsfTrackVarProducer::produce(edm::Event& iEvent, const edm::EventS
   }
 
   std::auto_ptr<reco::RecoEcalCandidateIsolationMap> dEtaMapForEvent(new reco::RecoEcalCandidateIsolationMap(dEtaMap));
+  std::auto_ptr<reco::RecoEcalCandidateIsolationMap> dEtaSeedMapForEvent(new reco::RecoEcalCandidateIsolationMap(dEtaSeedMap));
   std::auto_ptr<reco::RecoEcalCandidateIsolationMap> dPhiMapForEvent(new reco::RecoEcalCandidateIsolationMap(dPhiMap));
   std::auto_ptr<reco::RecoEcalCandidateIsolationMap> oneOverESuperMinusOneOverPMapForEvent(new reco::RecoEcalCandidateIsolationMap(oneOverESuperMinusOneOverPMap));
   std::auto_ptr<reco::RecoEcalCandidateIsolationMap> oneOverESeedMinusOneOverPMapForEvent(new reco::RecoEcalCandidateIsolationMap(oneOverESeedMinusOneOverPMap));
@@ -188,6 +203,7 @@ void EgammaHLTGsfTrackVarProducer::produce(edm::Event& iEvent, const edm::EventS
   std::auto_ptr<reco::RecoEcalCandidateIsolationMap> chi2ForEvent(new reco::RecoEcalCandidateIsolationMap(chi2Map));
 
   iEvent.put(dEtaMapForEvent, "Deta" );
+  iEvent.put(dEtaSeedMapForEvent, "DetaSeed" );
   iEvent.put(dPhiMapForEvent, "Dphi" );
   iEvent.put(oneOverESuperMinusOneOverPMapForEvent,"OneOESuperMinusOneOP");
   iEvent.put(oneOverESeedMinusOneOverPMapForEvent,"OneOESeedMinusOneOP");
