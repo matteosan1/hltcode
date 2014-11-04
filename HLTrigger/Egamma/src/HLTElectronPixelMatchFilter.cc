@@ -114,6 +114,8 @@ void HLTElectronPixelMatchFilter::fillDescriptions(edm::ConfigurationDescription
   desc.add<double>("tanhSO10InterThres",1);
   desc.add<double>("tanhSO10ForwardThres",1);
   desc.add<bool>  ("useS"     , false);
+  desc.add<bool>  ("pixelVeto", false);
+
   descriptions.add("hltElectronPixelMatchFilter",desc);
 }
 
