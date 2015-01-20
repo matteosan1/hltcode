@@ -28,7 +28,7 @@ class HLTElectronPixelMatchFilter : public HLTFilter {
   float calDPhi2Sq(reco::ElectronSeedCollection::const_iterator seed, int charge)const;
   float calDZ2Sq(reco::ElectronSeedCollection::const_iterator seed, int charge)const;
   int getNrOfMatches(edm::Handle<reco::ElectronSeedCollection>& eleSeeds,
-		     reco::SuperClusterRef& candSCRef)const;
+		     reco::SuperClusterRef& candSCRef, float& sValue)const;
 
   
   edm::InputTag candTag_;     // input tag identifying product contains filtered egammas

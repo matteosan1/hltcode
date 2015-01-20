@@ -28,7 +28,7 @@
 
 #include "DataFormats/RecoCandidate/interface/RecoEcalCandidate.h"
 #include "DataFormats/RecoCandidate/interface/RecoEcalCandidateFwd.h"
-#include "DataFormats/RecoCandidate/interface/RecoCandidate.h"
+#include "DataFormats/RecoCandidate/interface/RecoEcalCandidateIsolation.h"
 
 #include "DataFormats/TrajectorySeed/interface/TrajectorySeedCollection.h"
 
@@ -62,6 +62,10 @@ HLTElectronPixelMatchFilter::HLTElectronPixelMatchFilter(const edm::ParameterSet
   isPixelVeto_ = iConfig.getParameter< bool >("pixelVeto" );
   useS_        = iConfig.getParameter< bool >("useS" );
 
+  //register your products
+  produces < reco::RecoEcalCandidateIsolationMap >("Barrel");
+  produces < reco::RecoEcalCandidateIsolationMap >("Inter");
+  produces < reco::RecoEcalCandidateIsolationMap >("Forward");
 }
 
 HLTElectronPixelMatchFilter::~HLTElectronPixelMatchFilter()
@@ -120,6 +124,9 @@ void HLTElectronPixelMatchFilter::fillDescriptions(edm::ConfigurationDescription
 }
 
 bool HLTElectronPixelMatchFilter::hltFilter(edm::Event& iEvent, const edm::EventSetup& iSetup, trigger::TriggerFilterObjectWithRefs & filterproduct) const {
+
+  reco::RecoEcalCandidateIsolationMap sMap;
+  
   // The filter object
   using namespace trigger;
   if (saveTags()) {
@@ -153,8 +160,12 @@ bool HLTElectronPixelMatchFilter::hltFilter(edm::Event& iEvent, const edm::Event
     ref = recoecalcands[i];
     reco::SuperClusterRef recr2 = ref->superCluster();
     
-    int nmatch = getNrOfMatches(L1IsoSeeds,recr2);
-    if(!doIsolated_) nmatch+=getNrOfMatches(L1NonIsoSeeds,recr2);
+    float sValueToStore = 9999.;
+    int nmatch = getNrOfMatches(L1IsoSeeds, recr2, sValueToStore);
+    if(!doIsolated_) 
+      nmatch += getNrOfMatches(L1NonIsoSeeds, recr2, sValueToStore);
+
+    sMap.insert(ref, sValueToStore);
 
     if (!isPixelVeto_) {
       if ( nmatch >= npixelmatchcut_) {
@@ -170,13 +181,16 @@ bool HLTElectronPixelMatchFilter::hltFilter(edm::Event& iEvent, const edm::Event
  
   }//end of loop over candidates
   
+
+  std::auto_ptr<reco::RecoEcalCandidateIsolationMap> sMapPtr(new reco::RecoEcalCandidateIsolationMap(sMap));
+  iEvent.put(sMapPtr);
+  
   // filter decision
   const bool accept(n>=ncandcut_);
   return accept;
 }
 
-int HLTElectronPixelMatchFilter::getNrOfMatches(edm::Handle<reco::ElectronSeedCollection>& eleSeeds,
-						reco::SuperClusterRef& candSCRef)const
+int HLTElectronPixelMatchFilter::getNrOfMatches(edm::Handle<reco::ElectronSeedCollection>& eleSeeds, reco::SuperClusterRef& candSCRef, float& sValueToStore)const
 {
   int nrMatch=0;
   for(reco::ElectronSeedCollection::const_iterator seedIt = eleSeeds->begin(); seedIt != eleSeeds->end(); seedIt++){
@@ -188,10 +202,16 @@ int HLTElectronPixelMatchFilter::getNrOfMatches(edm::Handle<reco::ElectronSeedCo
 	float s2Pos = calDPhi1Sq(seedIt,1) + calDPhi2Sq(seedIt,1) + calDZ2Sq(seedIt,1);
 	
 	const float s2Thres = seedIt->subDet1()==1 ? seedIt->subDet2()==1 ? s2BarrelThres_ : s2InterThres_ : s2ForwardThres_; 
-	if(s2Neg<s2Thres || s2Pos<s2Thres) nrMatch++ ;
+	if(s2Neg<s2Thres || s2Pos<s2Thres) {
+	  nrMatch++;
+	  float minS = std::min(s2Neg, s2Pos);
+	  if (minS < sValueToStore)
+	    sValueToStore = minS;
+	}
       }
       else nrMatch++;
     }//end sc ref match
   }//end loop over ele seeds
+
   return nrMatch;
 }
