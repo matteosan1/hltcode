@@ -40,6 +40,15 @@
 #include "RecoEgamma/EgammaIsolationAlgos/interface/ElectronTkIsolation.h"
 #include "RecoEgamma/EgammaIsolationAlgos/interface/EgammaRecHitIsolation.h"
 #include "RecoLocalCalo/EcalRecAlgos/interface/EcalSeverityLevelAlgoRcd.h"
+#include "DataFormats/EcalDetId/interface/EcalSubdetector.h"
+
+#include "RecoEcal/EgammaCoreTools/interface/EcalClusterTools.h"
+
+#include "Geometry/CaloGeometry/interface/CaloGeometry.h"
+#include "Geometry/CaloTopology/interface/CaloTopology.h"
+
+#include "Geometry/Records/interface/CaloGeometryRecord.h"
+#include "Geometry/CaloEventSetup/interface/CaloTopologyRecord.h"
 
 #include "DataFormats/VertexReco/interface/Vertex.h"
 #include "DataFormats/VertexReco/interface/VertexFwd.h"
@@ -48,8 +57,6 @@
 #include "RecoLocalCalo/HcalRecAlgos/interface/HcalSeverityLevelComputerRcd.h"
 #include "CondFormats/HcalObjects/interface/HcalChannelQuality.h"
 #include "CondFormats/DataRecord/interface/HcalChannelQualityRcd.h"
-
-#include "Geometry/Records/interface/CaloGeometryRecord.h"
 
 #include "DataFormats/TrackReco/interface/Track.h"
 #include "DataFormats/GsfTrackReco/interface/GsfTrack.h"
@@ -96,6 +103,7 @@ private:
   virtual void endJob() ;
 
   edm::InputTag hitEBLabel_, hitEELabel_;
+  edm::InputTag rhitEBLabel_, rhitEELabel_;
   edm::InputTag trigResultsTag_;
   HLTConfigProvider hltConfig_; 
   std::vector<std::string> pathNames_;
@@ -111,6 +119,7 @@ private:
   Float_t etawidthpf[10], phiwidthpf[10];
   Float_t eraw[10];
   Float_t e[10];
+  Float_t e5x5pf[10];
   Float_t et[10];
   Float_t se[10];
   Float_t erawpf[10];
@@ -155,7 +164,8 @@ private:
   Float_t chiso[10];
   Float_t phiso[10];
   Float_t neiso[10];
-  Float_t chi2pf[10];
+  Int_t nchi2pf[10];
+  Float_t chi2pf[10][100];
   Int_t mishitspf[10];
   Int_t hitspf[10];
 
@@ -163,11 +173,21 @@ private:
   Float_t gp_eta[10];
   Float_t gp_phi[10];
 
+  Float_t reco_e5x5[10];
   Float_t reco_et[10];
   Float_t reco_pt[10];
   Float_t reco_eta[10];
   Float_t reco_phi[10];
-
+  Float_t reco_ecaliso[10];
+  Float_t reco_tkiso[10];
+  Float_t reco_sieie[10];
+  Float_t reco_deta[10];
+  Float_t reco_dphi[10];
+  Float_t reco_eop[10];
+  Float_t reco_hoe[10];
+  Int_t reco_nchi2[10];
+  Float_t reco_chi2[10][100];
+  
   float truePU;
   int bxPU[16];
   Int_t nvtx;
@@ -178,15 +198,15 @@ private:
   bool newClustering;
   bool oldClustering;
 
-  TH1F* timeEB, *timeEE;
+  TH1F* timeEB, *timeEE, *chi2EB, *chi2EE;
   TH2F* timeEB2D, *timeEE2D;
 };
 
 void plotDistr::beginRun(const edm::Run& run,const edm::EventSetup& setup) {
-  std::cout <<"begining run "<<std::endl;
-  bool changed = false;
-  hltConfig_.init(run,setup,trigResultsTag_.process(),changed); //as we need the orginal HLT config...
-  std::cout <<"table name "<<hltConfig_.tableName()<<std::endl;
+  //std::cout <<"begining run "<<std::endl;
+  //bool changed = false;
+  //hltConfig_.init(run,setup,trigResultsTag_.process(),changed); //as we need the orginal HLT config...
+  //std::cout <<"table name "<<hltConfig_.tableName()<<std::endl;
 }
 
 
@@ -201,11 +221,16 @@ plotDistr::plotDistr(const edm::ParameterSet& iConfig) {
   trigResultsTag_ = iConfig.getParameter<edm::InputTag>("trgResults");
   hitEBLabel_     = iConfig.getParameter<edm::InputTag>("hitEBLabel");
   hitEELabel_     = iConfig.getParameter<edm::InputTag>("hitEELabel");
+  rhitEBLabel_     = iConfig.getParameter<edm::InputTag>("rhitEBLabel");
+  rhitEELabel_     = iConfig.getParameter<edm::InputTag>("rhitEELabel");
 
   timeEB   = new TH1F("timeEB",   "", 400, -100, 100);
   timeEE   = new TH1F("timeEE",   "", 400, -100, 100);
   timeEB2D = new TH2F("timeEB2D", "", 400, -100, 100, 100, 0, 100);
   timeEE2D = new TH2F("timeEE2D", "", 400, -100, 100, 100, 0, 100);
+
+  chi2EB   = new TH1F("chi2EB", "", 1000, 0, 1000);
+  chi2EE   = new TH1F("chi2EE", "", 1000, 0, 1000);
 }
 
 plotDistr::~plotDistr() 
@@ -243,18 +268,27 @@ void plotDistr::mcTruth(edm::Handle<reco::GenParticleCollection> gpH) {
 }
 
 void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) {
-  edm::Handle<edm::TriggerResults> trigResultsHandle;
-  event.getByLabel(trigResultsTag_,trigResultsHandle);
+  
+  edm::ESHandle<CaloGeometry> pGeometry;
+  iSetup.get<CaloGeometryRecord>().get(pGeometry);
+  //const CaloGeometry *geometry = pGeometry.product();
+  
+  edm::ESHandle<CaloTopology> pTopology;
+  iSetup.get<CaloTopologyRecord>().get(pTopology);
+  const CaloTopology *topology = pTopology.product();
+  
+  //edm::Handle<edm::TriggerResults> trigResultsHandle;
+  //event.getByLabel(trigResultsTag_,trigResultsHandle);
 
-  const edm::TriggerResults& trigResults = *trigResultsHandle;
-  const edm::TriggerNames& trigNames = event.triggerNames(trigResults);  
+  //const edm::TriggerResults& trigResults = *trigResultsHandle;
+  //const edm::TriggerNames& trigNames = event.triggerNames(trigResults);  
 
-  for(size_t pathNr=0;pathNr<pathNames_.size();pathNr++){
-    passSel[pathNr] = 0;
-    size_t pathIndex = trigNames.triggerIndex(pathNames_[pathNr]);
-    if(pathIndex<trigResults.size() &&  trigResults.accept(pathIndex)) 
-      passSel[pathNr] = 1;
-  }
+  //for(size_t pathNr=0;pathNr<pathNames_.size();pathNr++){
+  //  passSel[pathNr] = 0;
+  //  size_t pathIndex = trigNames.triggerIndex(pathNames_[pathNr]);
+  //  if(pathIndex<trigResults.size() &&  trigResults.accept(pathIndex)) 
+  //    passSel[pathNr] = 1;
+  //}
   
   truePU = 9999.;
   for (int i=0; i<16; i++)
@@ -272,28 +306,34 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
       bxPU[j] = (*puH)[j].getPU_NumInteractions();
   }
 
+  edm::Handle<EcalRecHitCollection> rhitEBH, rhitEEH;
+  event.getByLabel(rhitEBLabel_, rhitEBH);
+  event.getByLabel(rhitEELabel_, rhitEEH);
+
   edm::Handle<EcalRecHitCollection> hitEBH, hitEEH;
   event.getByLabel(hitEBLabel_, hitEBH);
   event.getByLabel(hitEELabel_, hitEEH);
 
-  if (!hitEBH.failedToGet()) {
-    const EcalRecHitCollection* ec = hitEBH.product();
-    for(EcalRecHitCollection::const_iterator recHit = (*ec).begin(); recHit != (*ec).end(); ++recHit) {
-      //if (fabs(recHit->time()) < 10.) {
-      timeEB->Fill(recHit->time());
-      timeEB2D->Fill(recHit->time(), recHit->energy());
-      //}
-    }
-  }
+  EcalRecHitCollection ec;
+  EcalRecHitCollection ec2;
 
+
+  if (!hitEBH.failedToGet()) {
+    ec = *(hitEBH.product());
+    //for(EcalRecHitCollection::const_iterator recHit = (*ec).begin(); recHit != (*ec).end(); ++recHit) {
+    //  timeEB->Fill(recHit->time());
+    //  timeEB2D->Fill(recHit->time(), recHit->energy());
+    //  chi2EB->Fill(recHit->chi2());
+    //}
+  }
   if (!hitEEH.failedToGet()) {
-    const EcalRecHitCollection* ec2 = hitEEH.product();
-    for(EcalRecHitCollection::const_iterator recHit = (*ec2).begin(); recHit != (*ec2).end(); ++recHit) {
-      //if (fabs(recHit->time()) < 10.) {
-      timeEE->Fill(recHit->time());
-      timeEE2D->Fill(recHit->time(), recHit->energy());
-      //}
-    }
+    ec2 = *(hitEEH.product());
+    //for(EcalRecHitCollection::const_iterator recHit = (*ec2).begin(); recHit != (*ec2).end(); ++recHit) {
+    ////if (fabs(recHit->time()) < 10.) {
+    //timeEE->Fill(recHit->time());
+    //timeEE2D->Fill(recHit->time(), recHit->energy());
+    //chi2EE->Fill(recHit->chi2());
+    //}
   }
 
   edm::Handle<std::vector<reco::Electron> > eH;
@@ -312,7 +352,7 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
   edm::Handle<reco::VertexCollection> vtxH;
 
   if (saveUnseeded) {
-    event.getByLabel(edm::InputTag("hltEgammaCandidatesUnseeded"), cH);
+    event.getByLabel(edm::InputTag("hltEgammaCandidatesUnseeded","", "TEST"), cH);
 
     nuns = 0;
     if (!cH.failedToGet()) {
@@ -326,8 +366,8 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
 	phiuns[nuns] = 9999.;
 	
 	reco::RecoEcalCandidateRef c(cH, i);
-	euns[nuns] = c->energy();
-	etuns[nuns] = c->energy()*sin(c->theta());
+	euns[nuns] = c->superCluster()->rawEnergy();
+	etuns[nuns] = c->superCluster()->rawEnergy()*sin(c->theta());
 	etauns[nuns] = c->eta();
 	phiuns[nuns] = c->phi();
 	nuns++;
@@ -337,21 +377,68 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
 
   if (saveReco) {
     edm::Handle<std::vector<reco::GsfElectron> > elH;
-    event.getByLabel("gsfElectrons", elH);
+    event.getByLabel("gedGsfElectrons", elH);
+
+    edm::Handle<edm::ValueMap<float> > vmH;
+    event.getByLabel("electronEcalPFClusterIsolationProducer", vmH);
+    edm::ValueMap<float> vm = *(vmH.product());
+
+    edm::Handle<edm::ValueMap<float> > vmTkH;
+    event.getByLabel("hltTkIsoProducer", vmTkH);
+    edm::ValueMap<float> vmTk = *(vmTkH.product());
+
     reco_n = 0;
     for (unsigned int i=0; i<elH->size(); i++) {
       if (reco_n == 9)
 	continue;
       reco_et[reco_n] = 9999.;
+      reco_e5x5[reco_n] = 9999.;
       reco_eta[reco_n] = 9999.;
       reco_phi[reco_n] = 9999.;
       reco_pt[reco_n] = 9999.;
-      
+      reco_ecaliso[reco_n] = 9999.;
+      reco_tkiso[reco_n] = 9999.;
+      reco_sieie[reco_n] = 9999.;
+      reco_deta [reco_n] = 9999.;
+      reco_dphi [reco_n] = 9999.;
+      reco_eop  [reco_n] = 9999.;
+      reco_hoe  [reco_n] = 9999.;
+
       reco::GsfElectronRef el(elH, i);
-      reco_et[reco_n] = el->superCluster()->energy()*sin(el->superCluster()->position().theta());
+      reco_et[reco_n] = el->superCluster()->rawEnergy()*sin(el->superCluster()->position().theta());
+      reco_e5x5[reco_n] = el->full5x5_e5x5();
       reco_pt[reco_n] = el->pt();
       reco_eta[reco_n] = el->superCluster()->eta();
       reco_phi[reco_n] = el->superCluster()->phi();
+      reco_ecaliso[reco_n] = vm[el]; 
+      reco_tkiso[reco_n] = vmTk[el]; 
+      reco_sieie[reco_n] = el->full5x5_sigmaIetaIeta();
+      reco_deta [reco_n] = el->deltaEtaSuperClusterTrackAtVtx();
+      reco_dphi [reco_n] = el->deltaPhiSuperClusterTrackAtVtx();
+      reco_eop  [reco_n] = el->eSuperClusterOverP();
+      reco_hoe  [reco_n] = el->full5x5_hcalOverEcal();
+      
+      const std::vector< std::pair<DetId, float> > hits = el->superCluster()->hitsAndFractions();
+      int subdet = el->superCluster()->seed()->hitsAndFractions()[0].first.subdetId();
+
+      reco_nchi2[reco_n] = 0;
+      for (unsigned int h=0; h<el->superCluster()->size(); h++) {
+	if (reco_nchi2[reco_n] == 100) {
+	  std::cout << "Too many hits !" << std::endl;
+	  break; 
+	}
+	EcalRecHitCollection::const_iterator hit;
+	if (subdet == EcalBarrel) 
+	  hit = rhitEBH->find(hits[h].first);
+	else
+	  hit =  rhitEEH->find(hits[h].first);
+	
+	if ((hit->checkFlag(EcalRecHit::kGood) || hit->checkFlag(EcalRecHit::kOutOfTime)) && (hit->energy() > 1)) {
+	  reco_chi2[reco_n][reco_nchi2[reco_n]] = hit->chi2();
+	  reco_nchi2[reco_n]++;
+	}
+      }
+
       reco_n++;
     }
   }
@@ -370,127 +457,8 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
   else
     rho = 9999.;
 
-  //} else 
-  //nvtx = 0;
-
-//  if (oldClustering) {
-//    event.getByLabel( edm::InputTag("hltEleAnyWP80PixelMatchElectronsL1Seeded"), eH);   
-//    event.getByLabel( edm::InputTag("hltL1SeededRecoEcalCandidate"), cH);
-//    
-//    const reco::RecoEcalCandidateIsolationMap* sieieMap = 0;
-//    event.getByLabel(edm::InputTag("hltL1SeededHLTClusterShape"), sieieMapH);
-//    if (!sieieMapH.failedToGet())
-//      sieieMap = sieieMapH.product();
-//    
-//    const reco::RecoEcalCandidateIsolationMap* ecalMap = 0;
-//    event.getByLabel(edm::InputTag("hltL1SeededPhotonEcalIso"), ecalMapH);
-//    if (!ecalMapH.failedToGet()) 
-//      ecalMap = ecalMapH.product(); 
-//    
-//    const reco::RecoEcalCandidateIsolationMap* hcalMap = 0;
-//    event.getByLabel(edm::InputTag("hltL1SeededPhotonHcalIso"), hcalMapH);
-//    if (!hcalMapH.failedToGet()) 
-//      hcalMap = hcalMapH.product(); 
-//    
-//    const reco::RecoEcalCandidateIsolationMap* hoeMap = 0;
-//    event.getByLabel(edm::InputTag("hltL1SeededPhotonHcalForHE"), hoeMapH);
-//    if (!hoeMapH.failedToGet()) 
-//      hoeMap = hoeMapH.product(); 
-//    
-//    const reco::ElectronIsolationMap* tkisoMap = 0;
-//    event.getByLabel(edm::InputTag("hltEleAnyWP80L1SeededElectronTrackIso"), tkisoMapH);
-//    if (!tkisoMapH.failedToGet())
-//      tkisoMap = tkisoMapH.product();          
-//    
-//    const reco::ElectronIsolationMap* detaMap = 0;
-//    event.getByLabel(edm::InputTag("hltEleAnyWP80L1SeededDetaDphi:Deta"), detaMapH);
-//    if (!detaMapH.failedToGet())
-//      detaMap = detaMapH.product();          
-//    
-//    const reco::ElectronIsolationMap* dphiMap = 0;
-//    event.getByLabel(edm::InputTag("hltEleAnyWP80L1SeededDetaDphi:Dphi"), dphiMapH);
-//    if (!dphiMapH.failedToGet())
-//      dphiMap = dphiMapH.product();
-//        
-//    n = 0;
-//    for (unsigned int i=0; i<cH->size(); i++) {
-//      if (n == 9)
-//	continue;
-//      
-//      etawidth[n] = 9999.;
-//      phiwidth[n] = 9999.;
-//      e[n] = 9999.;
-//      et[n] = 9999.;
-//      se[n] = 9999.;
-//      eraw[n] = 9999.;
-//      eta[n] = 9999.;
-//      phi[n] = 9999.;
-//      seta[n] = 9999.;
-//      sphi[n] = 9999.;
-//      sieie[n] = 9999.;
-//      ecal[n] = 9999;
-//      deta[n] = 9999.;
-//      dphi[n] = 9999.;
-//      tkpt[n] = 9999.;
-//      tketa[n] = 9999.;
-//      tkphi[n] = 9999.;
-//      hcal[n] = 9999.;
-//      hoe[n] = 9999.;
-//      tkiso[n] = 9999.;
-//      
-//      reco::RecoEcalCandidateRef c(cH, i);
-//      //std::cout << c->eta() << " " <<  c->phi() << " " << c->et() << std::endl;
-//      //if (c->energy()*sin(c->theta()) < 20.)
-//      //  continue;
-//      eraw[n] = c->superCluster()->rawEnergy();
-//      e[n] = c->energy();//*sin(c->theta());
-//      et[n] = c->energy()*sin(c->theta());
-//      se[n] = c->superCluster()->seed()->energy();//*sin(c->theta());
-//      eta[n] = c->eta();
-//      phi[n] = c->phi();
-//      seta[n] = c->superCluster()->seed()->eta();
-//      sphi[n] = c->superCluster()->seed()->phi();
-//      etawidth[n] = c->superCluster()->etaWidth();
-//      phiwidth[n] = c->superCluster()->phiWidth();
-//      
-//      if (sieieMap != 0)
-//	sieie[n] = (*sieieMap)[c];
-//      
-//      if (ecalMap != 0) 
-//	ecal[n] = (*ecalMap)[c]; 
-//      
-//      if (hoeMap != 0) 
-//	hoe[n] = (*hoeMap)[c]; 
-//      
-//      if (hcalMap != 0) 
-//	hcal[n] = (*hcalMap)[c]; 
-//      
-//      if (!eH.failedToGet()) {
-//	int index  = findEleRef(c, eH);
-//	if (index != -1) {
-//	  reco::ElectronRef e(eH, index);
-//	  
-//	  tkpt[n] = e->track()->pt();
-//	  tketa[n] = e->track()->eta();	
-//	  tkphi[n] = e->track()->phi();
-//	  
-//	  if (detaMap != 0) {
-//	    deta[n] = ((*detaMap)[e]);
-//	  }
-//	  
-//	  if (dphiMap != 0)
-//	    dphi[n] = fabs((*dphiMap)[e]);
-//
-//	  if (tkisoMap != 0)
-//	    tkiso[n] = ((*tkisoMap)[e]);
-//	}
-//      }
-//      n++;
-//    }
-//  }
-
   if (newClustering) {
-    event.getByLabel( edm::InputTag("hltEgammaCandidates"), cH);
+    event.getByLabel( edm::InputTag("hltEgammaCandidates", "", "TEST"), cH);
     
     npf = 0;
     if (!cH.failedToGet()) {
@@ -535,10 +503,10 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
       if (!eopMapH.failedToGet()) 
 	eopMapPF = eopMapH.product();
 
-      const reco::RecoEcalCandidateIsolationMap* chi2MapPF = 0;
-      event.getByLabel(edm::InputTag("hltEgammaGsfTrackVars:Chi2"), chi2MapH);
-      if (!chi2MapH.failedToGet()) 
-	chi2MapPF = chi2MapH.product();
+//const reco::RecoEcalCandidateIsolationMap* chi2MapPF = 0;
+//event.getByLabel(edm::InputTag("hltEgammaGsfTrackVars:Chi2"), chi2MapH);
+//if (!chi2MapH.failedToGet()) 
+//	chi2MapPF = chi2MapH.product();
 
       const reco::RecoEcalCandidateIsolationMap* mishitsMapPF = 0;
       event.getByLabel(edm::InputTag("hltEgammaGsfTrackVars:MissingHits"), mishitsMapH);
@@ -551,8 +519,10 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
 	hitsMapPF = hitsMapH.product();
       
       for (unsigned int i=0; i<cH->size(); i++) {
+	//std::cout << "Canddiates" << i << std::endl;
 	if (npf == 9)
 	  continue;
+	e5x5pf[npf] = 9999.;
 	etawidthpf[npf] = 9999.;
 	phiwidthpf[npf] = 9999.;
 	epf[npf] = 9999.;
@@ -575,24 +545,54 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
 	hoepf[npf] = 9999.;
 	tkisopf[npf] = 9999.;
 	mishitspf[npf] = 9999.;
-	chi2pf[npf] = 9999.;
+	//chi2pf[npf] = 9999.;
 	hitspf[npf] = 9999.;
-
+	
 	reco::RecoEcalCandidateRef c(cH, i);
 	//std::cout << c->eta() << " " <<  c->phi() << " " << c->et() << std::endl;
 	//if (c->energy()*sin(c->theta()) < 20.)
 	//  continue;
 	
+	std::cout << "ECCOMI" << std::endl;
+	const std::vector< std::pair<DetId, float> > hits = c->superCluster()->hitsAndFractions();
+	int subdet = c->superCluster()->seed()->hitsAndFractions()[0].first.subdetId();
+	std::cout << "ECCOMI2" << std::endl;
+	nchi2pf[npf] = 0;
+	for (unsigned int h=0; h<hits.size(); h++) {
+	    if (nchi2pf[npf] == 100) {
+	      std::cout << "Too many hits HLT !" << std::endl;
+	      break; 
+	    }
+	    
+	    EcalRecHitCollection::const_iterator hit;
+	    if (subdet == EcalBarrel)
+	      hit = hitEBH->find(hits[h].first);
+	    else
+	      hit = hitEEH->find(hits[h].first);
+	    
+	    if ((hit->checkFlag(EcalRecHit::kGood) || hit->checkFlag(EcalRecHit::kOutOfTime)) and (hit->energy() > 1)) {
+	      chi2pf[npf][nchi2pf[npf]] = hit->chi2();
+	      nchi2pf[npf]++;
+	    }
+	  }
+	       
+
 	//erawpf[npf] = c->superCluster()->rawEnergy();
 	//etawidthpf[npf] = c->superCluster()->etaWidth();
 	//phiwidthpf[npf] = c->superCluster()->phiWidth();
-	epf[npf] = c->energy();//*sin(c->theta());
-	etpf[npf] = c->energy()*sin(c->theta());
+	std::cout << "ECCOMI3" << std::endl;
+	epf[npf] = c->superCluster()->rawEnergy();//*sin(c->theta());
+	if (subdet == EcalBarrel)
+	  e5x5pf[npf] = noZS::EcalClusterTools::e5x5(*(c->superCluster()->seed()), &ec, topology); 
+	else
+	  e5x5pf[npf] = noZS::EcalClusterTools::e5x5(*(c->superCluster()->seed()), &ec2, topology); 
+	etpf[npf] = c->superCluster()->rawEnergy()*sin(c->superCluster()->position().theta());
 	//sepf[npf] = c->superCluster()->seed()->energy();//*sin(c->theta());
-	etapf[npf] = c->eta();
-	phipf[npf] = c->phi();
+	etapf[npf] = c->superCluster()->position().eta();
+	phipf[npf] = c->superCluster()->position().phi();
 	//setapf[npf] = c->superCluster()->seed()->eta();
 	//sphipf[npf] = c->superCluster()->seed()->phi();
+
 	if (sieieMapPF != 0)
 	  sieiepf[npf] = (*sieieMapPF)[c];
 	if (ecalMapPF != 0)
@@ -619,8 +619,8 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
 	if (hitsMapPF != 0)
 	  hitspf[npf] = (*hitsMapPF)[c];
 
-	if (chi2MapPF != 0)
-	  chi2pf[npf] = (*chi2MapPF)[c];
+	//if (chi2MapPF != 0)
+	//  chi2pf[npf] = (*chi2MapPF)[c];
 	
 	if (tkisoMapPF != 0)
 	  tkisopf[npf] = fabs((*tkisoMapPF)[c]);
@@ -671,6 +671,7 @@ void plotDistr::beginJob() {
     //t->Branch("ewidthpf", &etawidthpf, "ewidthpf[npf]/F");
     //t->Branch("pwidthpf", &phiwidthpf, "pwidthpf[npf]/F");
     t->Branch("epf", &epf, "epf[npf]/F");
+    t->Branch("e5x5pf", &e5x5pf, "e5x5pf[npf]/F");
     t->Branch("etpf", &etpf, "etpf[npf]/F");
     t->Branch("sepf", &sepf, "sepf[npf]/F");
     //t->Branch("erawpf", &erawpf, "erawpf[npf]/F");
@@ -693,7 +694,8 @@ void plotDistr::beginJob() {
     t->Branch("phiso",   &phiso, "phiso[npf]/F");
     t->Branch("neiso",   &neiso, "neiso[npf]/F");
     t->Branch("eoppf", &eoppf, "eoppf[npf]/F");
-    t->Branch("chi2pf", &chi2pf, "chi2pf[npf]/F");
+    t->Branch("nchi2pf", &nchi2pf, "nchi2pf[npf]/I");
+    t->Branch("chi2pf", &chi2pf, "chi2pf[npf][100]/F");
     t->Branch("mishitspf", &mishitspf, "mishitspf[npf]/I");
     t->Branch("hitspf", &hitspf, "hitspf[npf]/I");
   }
@@ -709,9 +711,19 @@ void plotDistr::beginJob() {
   if (saveReco) {
     t->Branch("recon",   &reco_n,   "recon/I");
     t->Branch("recoet",  &reco_et,  "recoet[recon]/F");
+    t->Branch("recoe5x5",  &reco_e5x5,  "recoe5x5[recon]/F");
     t->Branch("recopt",  &reco_pt,  "recopt[recon]/F");
     t->Branch("recoeta", &reco_eta, "recoeta[recon]/F");
     t->Branch("recophi", &reco_phi, "recophi[recon]/F");
+    t->Branch("recoecaliso", &reco_ecaliso, "recoecaliso[recon]/F"); 
+    t->Branch("recotkiso", &reco_tkiso, "recotkiso[recon]/F"); 
+    t->Branch("recosieie", &reco_sieie, "recosieie[recon]/F");
+    t->Branch("recodeta", &reco_deta, "recodeta[recon]/F");
+    t->Branch("recodphi", &reco_dphi, "recodphi[recon]/F");
+    t->Branch("recoeop", &reco_eop, "recoeop[recon]/F");
+    t->Branch("recohoe", &reco_hoe, "recohoe[recon]/F");
+    t->Branch("reconchi2", &reco_nchi2, "reconchi2[recon]/I");
+    t->Branch("recochi2", &reco_chi2, "recochi2[recon][100]/F");
   }
 
   if (!isData) {
@@ -732,6 +744,8 @@ void plotDistr::endJob() {
   timeEE->Write();
   timeEB2D->Write();
   timeEE2D->Write();
+  chi2EB->Write();
+  chi2EE->Write();
   f->Close();
 }
 
