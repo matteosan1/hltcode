@@ -553,10 +553,9 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
 	//if (c->energy()*sin(c->theta()) < 20.)
 	//  continue;
 	
-	std::cout << "ECCOMI" << std::endl;
 	const std::vector< std::pair<DetId, float> > hits = c->superCluster()->hitsAndFractions();
 	int subdet = c->superCluster()->seed()->hitsAndFractions()[0].first.subdetId();
-	std::cout << "ECCOMI2" << std::endl;
+
 	nchi2pf[npf] = 0;
 	for (unsigned int h=0; h<hits.size(); h++) {
 	    if (nchi2pf[npf] == 100) {
@@ -580,7 +579,7 @@ void plotDistr::analyze(const edm::Event& event, const edm::EventSetup& iSetup) 
 	//erawpf[npf] = c->superCluster()->rawEnergy();
 	//etawidthpf[npf] = c->superCluster()->etaWidth();
 	//phiwidthpf[npf] = c->superCluster()->phiWidth();
-	std::cout << "ECCOMI3" << std::endl;
+
 	epf[npf] = c->superCluster()->rawEnergy();//*sin(c->theta());
 	if (subdet == EcalBarrel)
 	  e5x5pf[npf] = noZS::EcalClusterTools::e5x5(*(c->superCluster()->seed()), &ec, topology); 
